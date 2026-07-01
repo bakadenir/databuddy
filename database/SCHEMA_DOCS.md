@@ -96,26 +96,42 @@ dim_shipping ►─────────────────────�
 
 ---
 
-## Mapping: Kolom Shopee → Schema
+## Mapping: Kolom Shopee CSV → Schema
 
-> *Akan diupdate setelah kode ETL diterima*
+| Kolom CSV Shopee | Target Tabel | Target Kolom | Catatan |
+|------------------|-------------|--------------|---------|
+| `No. Pesanan` | fact_order_item | order_id | |
+| `Waktu Pesanan Dibuat` | dim_date | order_created_at | Parsed ke datetime |
+| `Nama Produk` | dim_product | product_name | |
+| `Nama Variasi` | dim_product | product_variation | |
+| `Nama Produk` + `Nama Variasi` | dim_product | sku | SKU Sintetis (sementara) |
+| `Username (Pembeli)` | dim_customer | customer_username | |
+| `Kota/Kabupaten` | dim_location | city | |
+| `Provinsi` | dim_location | province | |
+| `Metode Pembayaran` | dim_payment | payment_method | |
+| `Status Pesanan` | dim_status | order_status | |
+| `Opsi Pengiriman` | dim_shipping | service_type | Full string |
+| `Opsi Pengiriman` (split `-`) | dim_shipping | courier_name | Nama kurir saja |
+| `Jumlah` | fact_order_item | quantity | |
+| `Harga Awal` | fact_order_item | original_price | |
+| `Harga Setelah Diskon` | fact_order_item | discounted_price | |
+| `Total Diskon` | fact_order_item | total_discount | |
+| Kalkulasi: qty × discounted | fact_order_item | valid_item_revenue | |
+| Status = "selesai" | fact_order_item | is_completed | Flag 1/0 |
+| Status = "batal/pengembalian" | fact_order_item | is_cancelled | Flag 1/0 |
 
-| Kolom CSV Shopee | Target Tabel | Target Kolom |
-|------------------|-------------|--------------|
-| No. Pesanan | fact_order_item | order_id |
-| Waktu Pesanan Dibuat | dim_date | order_created_at |
-| Username Pembeli | dim_customer | customer_username |
-| Nama Produk | dim_product | product_name |
-| Nomor Referensi SKU | dim_product | sku |
-| Nama Variasi | dim_product | product_variation |
-| Jumlah | fact_order_item | quantity |
-| Harga Awal | fact_order_item | original_price |
-| Harga Setelah Diskon | fact_order_item | discounted_price |
-| Status Pesanan | dim_status | order_status |
-| Metode Pembayaran | dim_payment | payment_method |
-| Opsi Pengiriman | dim_shipping | courier_name |
-| Kota | dim_location | city |
-| Provinsi | dim_location | province |
+## Catatan Penting
+
+### HPP Source of Truth
+- HPP **tidak ada** di file ekspor Shopee
+- Nilai default = `0` untuk produk baru (jelas "belum diisi")
+- Setelah upload, isi HPP manual di tabel `dim_product` di Supabase
+- Upload berikutnya: HPP dari Supabase dipertahankan, **tidak tertimpa**
+
+### dim_date — Baris = Hari Unik (bukan Transaksi)
+- `dim_date` adalah **kalender harian** → 1 baris = 1 hari
+- Data 6 bulan → ±180 baris = **BENAR** ✓
+- `fact_order_item` yang menyimpan semua 8000+ baris transaksi
 
 ---
 
