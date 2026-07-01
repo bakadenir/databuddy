@@ -175,7 +175,7 @@ else:
 run_btn = st.button(
     "🚀 Jalankan ETL",
     type="primary",
-    use_container_width=True,
+    width="stretch",
     key="run_etl_btn",
 )
 
@@ -245,7 +245,7 @@ if run_btn or st.session_state.get("etl_done"):
     )
     if selected:
         df_preview = tables[selected]
-        st.dataframe(df_preview.head(50), use_container_width=True, height=300)
+        st.dataframe(df_preview.head(50), width="stretch", height=300)
 
         # HPP warning untuk dim_product
         if selected == "dim_product" and "hpp" in df_preview.columns:
@@ -274,7 +274,7 @@ if run_btn or st.session_state.get("etl_done"):
                 file_name=f"{tbl_name}.csv",
                 mime="text/csv",
                 key=f"dl_{tbl_name}",
-                use_container_width=True,
+                width="stretch",
             )
 
     with save_col2:
@@ -295,7 +295,7 @@ if run_btn or st.session_state.get("etl_done"):
             push_btn = st.button(
                 "☁️ Push ke Supabase",
                 type="primary",
-                use_container_width=True,
+                width="stretch",
                 key="push_supabase_btn",
             )
             if push_btn:
