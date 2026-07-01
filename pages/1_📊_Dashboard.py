@@ -32,14 +32,23 @@ C = {
     "muted":   "#94a3b8",
 }
 
+# Hanya global keys yang TIDAK pernah di-override per chart
+# margin, xaxis, yaxis DIKELUARKAN dari sini untuk menghindari konflik
 PLOTLY_THEME = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
     font=dict(color=C["text"], family="Inter"),
-    xaxis=dict(gridcolor="#1e293b", showgrid=True),
-    yaxis=dict(gridcolor="#1e293b", showgrid=True),
-    margin=dict(l=20, r=20, t=40, b=20),
 )
+
+DEFAULT_MARGIN = dict(l=20, r=20, t=40, b=20)
+
+GRID_STYLE = dict(gridcolor=C["border"], showgrid=True)
+
+def apply_grid(fig):
+    """Terapkan dark grid ke semua axes secara terpisah."""
+    fig.update_xaxes(**GRID_STYLE)
+    fig.update_yaxes(**GRID_STYLE)
+    return fig
 
 COLOR_SEQ = [
     C["orange"], C["purple"], C["cyan"], C["green"],
@@ -88,12 +97,14 @@ if not tables:
     st.stop()
 
 # ── Build Master ────────────────────────────────────────────────
-@st.cache_data
-def get_master(_tables_id):
-    return build_master(st.session_state["etl_tables"])
+# ── Build Master ────────────────────────────────────────────────
+# TIDAK pakai @st.cache_data karena data berubah setiap ETL run
+# (cache sudah di-clear di upload page saat ETL selesai)
+def get_master(tables_dict):
+    return build_master(tables_dict)
 
 with st.spinner("🔄 Memuat data..."):
-    df_master = get_master(id(tables))
+    df_master = get_master(tables)
 
 # ── Header ──────────────────────────────────────────────────────
 st.markdown(f"""
@@ -231,9 +242,11 @@ if not trend_df.empty:
     fig_trend.update_layout(
         **PLOTLY_THEME,
         height=320,
+        margin=DEFAULT_MARGIN,
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         hovermode="x unified",
     )
+    fig_trend.update_xaxes(**GRID_STYLE)
     fig_trend.update_yaxes(
         title_text="Revenue (Rp)", secondary_y=False,
         gridcolor=C["border"], tickprefix="Rp ",
@@ -282,10 +295,12 @@ with col_prod:
         fig_prod.update_layout(
             **PLOTLY_THEME,
             height=420,
+            margin=DEFAULT_MARGIN,
             showlegend=False,
             coloraxis_showscale=False,
-            yaxis=dict(tickfont=dict(size=10)),
         )
+        apply_grid(fig_prod)
+        fig_prod.update_yaxes(tickfont=dict(size=10))
         st.plotly_chart(fig_prod, width="stretch")
 
 with col_status:
@@ -358,10 +373,12 @@ with geo_col1:
         fig_prov.update_layout(
             **PLOTLY_THEME,
             height=380,
+            margin=DEFAULT_MARGIN,
             showlegend=False,
             coloraxis_showscale=False,
             title_font=dict(size=13, color=C["muted"]),
         )
+        apply_grid(fig_prov)
         st.plotly_chart(fig_prov, width="stretch")
 
 with geo_col2:
@@ -378,6 +395,7 @@ with geo_col2:
         fig_city.update_layout(
             **PLOTLY_THEME,
             height=380,
+            margin=DEFAULT_MARGIN,
             title_font=dict(size=13, color=C["muted"]),
             coloraxis_colorbar=dict(
                 title="Revenue",
@@ -412,11 +430,11 @@ with heat_col:
         fig_hm.update_layout(
             **PLOTLY_THEME,
             height=260,
-            xaxis=dict(title="Jam (0-23)", tickmode="linear", dtick=2),
-            yaxis=dict(title=""),
-            coloraxis_colorbar=dict(thickness=10, len=0.8),
             margin=dict(l=10, r=10, t=10, b=10),
+            coloraxis_colorbar=dict(thickness=10, len=0.8),
         )
+        fig_hm.update_xaxes(title_text="Jam (0-23)", tickmode="linear", dtick=2)
+        fig_hm.update_yaxes(title_text="")
         st.plotly_chart(fig_hm, width="stretch")
 
 with pay_col:
@@ -438,8 +456,9 @@ with pay_col:
             showlegend=False,
             coloraxis_showscale=False,
             margin=dict(l=0, r=10, t=10, b=10),
-            yaxis=dict(tickfont=dict(size=10)),
         )
+        apply_grid(fig_pay)
+        fig_pay.update_yaxes(tickfont=dict(size=10))
         st.plotly_chart(fig_pay, width="stretch")
 
 st.divider()

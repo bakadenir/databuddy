@@ -193,6 +193,8 @@ if run_btn or st.session_state.get("etl_done"):
                 tables = run_etl(df_raw, existing_products)
                 st.session_state["etl_tables"] = tables
                 st.session_state["etl_done"] = True
+                # ⬇️ Wajib clear cache dashboard agar pakai data terbaru
+                st.cache_data.clear()
                 st.success("✅ ETL selesai! Semua 8 tabel berhasil dibuat.")
             except Exception as e:
                 st.error(f"❌ ETL gagal: {e}")
@@ -256,7 +258,30 @@ if run_btn or st.session_state.get("etl_done"):
                     "Setelah upload ke Supabase, isi HPP-nya langsung di tabel Supabase."
                 )
 
-    st.divider()
+    # ── 🔍 Diagnostik Harga (Debug Revenue) ───────────────────
+    with st.expander("🔍 Diagnostik Harga — Klik untuk verifikasi parsing nominal", expanded=True):
+        fact_tbl = tables.get("fact_order_item", pd.DataFrame())
+        if not fact_tbl.empty and "discounted_price" in fact_tbl.columns:
+            price_cols = ["order_id", "quantity", "original_price",
+                          "discounted_price", "total_discount", "valid_item_revenue"]
+            sample = fact_tbl[price_cols].head(10)
+
+            st.markdown("**10 Baris Pertama — Kolom Harga (setelah parse):**")
+            st.dataframe(sample, width="stretch", height=250)
+
+            # Statistik cepat
+            d1, d2, d3, d4 = st.columns(4)
+            d1.metric("Max Harga Satuan",   f"Rp {int(fact_tbl['discounted_price'].max()):,}")
+            d2.metric("Median Harga",        f"Rp {int(fact_tbl['discounted_price'].median()):,}")
+            d3.metric("Max Revenue/Baris",   f"Rp {int(fact_tbl['valid_item_revenue'].max()):,}")
+            d4.metric("Total Revenue Raw",   f"Rp {int(fact_tbl['valid_item_revenue'].sum()):,}")
+
+            st.caption(
+                "💡 Jika 'Max Harga Satuan' masih tampak sangat kecil (< 1000), "
+                "berarti ada masalah parsing format angka. Screenshot dan kirim ke chat."
+            )
+        else:
+            st.info("Jalankan ETL dulu untuk melihat diagnostik harga.")
 
     # ── Simpan / Upload ────────────────────────────────────────
     st.subheader("4️⃣ Simpan Hasil")

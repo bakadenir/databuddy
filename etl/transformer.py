@@ -10,6 +10,7 @@ Ported & upgraded dari Google Colab script:
 
 import pandas as pd
 import numpy as np
+import re
 from typing import Optional
 
 
@@ -27,6 +28,78 @@ NAMA_HARI_ID = {
     "Thursday": "Kamis", "Friday": "Jumat",
     "Saturday": "Sabtu", "Sunday": "Minggu",
 }
+
+
+# ── PARSER NOMINAL IDR ────────────────────────────────────────
+
+def parse_idr(val) -> int:
+    """
+    Parse format Rupiah Indonesia ke integer.
+
+    Format yang didukung (dari Excel Shopee):
+      "50.000"       → 50000   (titik = pemisah ribuan Indonesia)
+      "1.500.000"    → 1500000
+      "50,000"       → 50000   (koma = pemisah ribuan barat)
+      "50000"        → 50000   (tanpa pemisah)
+      "50.000,00"    → 50000   (ribuan titik + desimal koma)
+      ""  / nan      → 0
+
+    Masalah umum:
+      pd.to_numeric("50.000") = 50.0  ← SALAH (titik dianggap desimal)
+      parse_idr("50.000")     = 50000 ← BENAR
+    """
+    if val is None or (isinstance(val, float) and np.isnan(val)):
+        return 0
+    s = str(val).strip()
+    if s in ("", "nan", "None", "-", "0.0"):
+        return 0
+
+    # Hapus karakter non-numerik kecuali titik dan koma
+    s = re.sub(r"[^\d.,]", "", s)
+    if not s:
+        return 0
+
+    # ── Deteksi & konversi format ──────────────────────────────
+    # Case 1: Ada koma DAN titik → format "1.500.000,00" atau "1,500,000.00"
+    if "." in s and "," in s:
+        last_dot   = s.rfind(".")
+        last_comma = s.rfind(",")
+        if last_dot > last_comma:
+            # Format barat: 1,500,000.00 → hapus koma, titik = desimal
+            s = s.replace(",", "")
+        else:
+            # Format Indonesia: 1.500.000,00 → hapus titik, ganti koma = desimal
+            s = s.replace(".", "").replace(",", ".")
+
+    # Case 2: Hanya titik → cek apakah pemisah ribuan atau desimal
+    elif "." in s and "," not in s:
+        parts = s.split(".")
+        if len(parts) > 1 and all(len(p) == 3 for p in parts[1:]):
+            # Semua bagian setelah titik adalah 3 digit → ribuan Indonesia
+            # Contoh: "50.000" → ["50","000"] → 50000
+            # Contoh: "1.500.000" → ["1","500","000"] → 1500000
+            s = s.replace(".", "")
+        # else: titik = desimal (misal "50.5" → biarkan)
+
+    # Case 3: Hanya koma → cek apakah pemisah ribuan atau desimal
+    elif "," in s and "." not in s:
+        parts = s.split(",")
+        if len(parts[-1]) == 3:
+            # "50,000" → pemisah ribuan barat
+            s = s.replace(",", "")
+        else:
+            # "50,5" → desimal
+            s = s.replace(",", ".")
+
+    try:
+        return int(float(s))
+    except (ValueError, OverflowError):
+        return 0
+
+
+def parse_idr_series(series: pd.Series) -> pd.Series:
+    """Terapkan parse_idr ke seluruh kolom Series."""
+    return series.apply(parse_idr)
 
 
 # ── STAGE 1: CLEANING AWAL ────────────────────────────────────
@@ -248,9 +321,13 @@ def build_fact_order_item(
         left_on="Opsi Pengiriman", right_on="service_type", how="left"
     )
 
-    # Kolom numerik — ganti NaN → 0
+    # Kolom numerik — parse format IDR Indonesia (titik = ribuan, bukan desimal)
     for col in ["Jumlah", "Harga Awal", "Harga Setelah Diskon", "Total Diskon"]:
-        fact[col] = pd.to_numeric(fact[col], errors="coerce").fillna(0)
+        fact[col] = parse_idr_series(fact[col])
+
+    # Debug: print sample nilai untuk validasi
+    sample = fact[["Harga Awal", "Harga Setelah Diskon"]].head(3)
+    print(f"[DEBUG] Sample harga setelah parse: {sample.to_dict('records')}")
 
     # Kalkulasi metrik & flags
     fact["valid_item_revenue"] = (fact["Jumlah"] * fact["Harga Setelah Diskon"]).astype(int)
