@@ -16,65 +16,84 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Theme Colors ────────────────────────────────────────────────
+# ── Theme Colors (Light) ───────────────────────────────────────
 C = {
+    "teal":    "#0d9488",
+    "sky":     "#0ea5e9",
     "orange":  "#f97316",
-    "amber":   "#fbbf24",
-    "purple":  "#8b5cf6",
-    "cyan":    "#06b6d4",
-    "green":   "#22c55e",
-    "red":     "#f43f5e",
-    "blue":    "#3b82f6",
-    "bg":      "#0f172a",
-    "card":    "#1e293b",
-    "border":  "#334155",
-    "text":    "#f8fafc",
-    "muted":   "#94a3b8",
+    "amber":   "#f59e0b",
+    "purple":  "#7c3aed",
+    "indigo":  "#6366f1",
+    "green":   "#16a34a",
+    "red":     "#dc2626",
+    "pink":    "#db2777",
+    "bg":      "#f0f9ff",
+    "card":    "#ffffff",
+    "border":  "#e2e8f0",
+    "text":    "#0f172a",
+    "muted":   "#64748b",
 }
 
-# Hanya global keys yang TIDAK pernah di-override per chart
-# margin, xaxis, yaxis DIKELUARKAN dari sini untuk menghindari konflik
+# Plotly light theme — bersih, colorful
 PLOTLY_THEME = dict(
     paper_bgcolor="rgba(0,0,0,0)",
-    plot_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(255,255,255,0.7)",
     font=dict(color=C["text"], family="Inter"),
 )
 
 DEFAULT_MARGIN = dict(l=20, r=20, t=40, b=20)
-
-GRID_STYLE = dict(gridcolor=C["border"], showgrid=True)
+GRID_STYLE = dict(gridcolor="#f1f5f9", showgrid=True)
 
 def apply_grid(fig):
-    """Terapkan dark grid ke semua axes secara terpisah."""
+    """Terapkan light grid ke semua axes."""
     fig.update_xaxes(**GRID_STYLE)
     fig.update_yaxes(**GRID_STYLE)
     return fig
 
 COLOR_SEQ = [
-    C["orange"], C["purple"], C["cyan"], C["green"],
-    C["amber"], C["red"], C["blue"],
-    "#ec4899", "#14b8a6", "#a78bfa",
+    C["teal"], C["orange"], C["indigo"], C["green"],
+    C["amber"], C["red"], C["sky"], C["pink"],
+    "#0891b2", "#9333ea",
 ]
 
-# ── CSS ─────────────────────────────────────────────────────────
+# ── CSS (Light Theme) ───────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-div[data-testid="metric-container"] {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 12px;
-    padding: 1rem 1.2rem;
+
+.stApp {
+    background: linear-gradient(135deg, #f0f9ff 0%, #fafafa 45%, #fdf4ff 100%);
 }
-div[data-testid="metric-container"] label { color: #94a3b8 !important; font-size: 0.8rem !important; }
-div[data-testid="metric-container"] [data-testid="metric-value"] { color: #f8fafc !important; font-size: 1.6rem !important; }
-div[data-testid="metric-container"] [data-testid="metric-delta"] { font-size: 0.75rem !important; }
+section[data-testid="stSidebar"] {
+    background: #ffffff;
+    border-right: 1px solid #e2e8f0;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+}
+section[data-testid="stSidebar"] * { color: #334155 !important; }
+section[data-testid="stSidebar"] .stMarkdown h3 { color: #0ea5e9 !important; }
+
+div[data-testid="metric-container"] {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+div[data-testid="metric-container"] label {
+    color: #64748b !important; font-size: 0.8rem !important; font-weight: 500 !important;
+}
+div[data-testid="metric-container"] [data-testid="metric-value"] {
+    color: #0f172a !important; font-size: 1.6rem !important; font-weight: 700 !important;
+}
+hr { border-color: #e2e8f0 !important; }
 .section-header {
-    color: #94a3b8; font-size: 0.75rem; font-weight: 600;
-    text-transform: uppercase; letter-spacing: 0.1em;
+    color: #475569; font-size: 0.72rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.12em;
     margin: 1.5rem 0 0.5rem 0;
 }
+.stDataFrame { border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+div[data-testid="stAlert"] { border-radius: 12px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -111,9 +130,9 @@ st.markdown(f"""
 <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:0.5rem;">
     <div>
         <h2 style="
-            background:linear-gradient(135deg,{C['orange']},{C['amber']});
+            background:linear-gradient(135deg,{C['sky']},{C['indigo']},{C['orange']});
             -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-            background-clip:text; margin:0;
+            background-clip:text; margin:0; font-weight:800;
         ">📊 Dashboard Analytics</h2>
         <p style="color:{C['muted']}; margin:0; font-size:0.9rem;">
             {df_master['order_id'].nunique():,} orders · {df_master['customer_id'].nunique():,} customers · {df_master['tanggal_pesanan'].nunique()} hari
@@ -129,7 +148,7 @@ st.divider()
 # ══════════════════════════════════════════════
 with st.sidebar:
     st.markdown(f"""
-    <h3 style="color:{C['orange']}; margin:0 0 1rem 0;">🎛️ Filter</h3>
+    <h3 style="color:{C['sky']}; margin:0 0 1rem 0;">🎛️ Filter</h3>
     """, unsafe_allow_html=True)
 
     # Date range
@@ -224,7 +243,7 @@ if not trend_df.empty:
     fig_trend.add_trace(
         go.Bar(
             x=trend_df["tanggal"], y=trend_df["revenue"],
-            name="Revenue", marker_color=C["orange"],
+            name="Revenue", marker_color=C["teal"],
             opacity=0.85,
         ),
         secondary_y=False,
@@ -233,8 +252,8 @@ if not trend_df.empty:
         go.Scatter(
             x=trend_df["tanggal"], y=trend_df["orders"],
             name="Orders", mode="lines+markers",
-            line=dict(color=C["cyan"], width=2),
-            marker=dict(size=4),
+            line=dict(color=C["orange"], width=2.5),
+            marker=dict(size=5),
         ),
         secondary_y=True,
     )
@@ -249,11 +268,11 @@ if not trend_df.empty:
     fig_trend.update_xaxes(**GRID_STYLE)
     fig_trend.update_yaxes(
         title_text="Revenue (Rp)", secondary_y=False,
-        gridcolor=C["border"], tickprefix="Rp ",
+        gridcolor="#f1f5f9", tickprefix="Rp ", color=C["muted"],
     )
     fig_trend.update_yaxes(
         title_text="Jumlah Orders", secondary_y=True,
-        gridcolor=C["border"],
+        gridcolor="#f1f5f9", color=C["muted"],
     )
     st.plotly_chart(fig_trend, width="stretch")
 
@@ -283,7 +302,7 @@ with col_prod:
             y="product_name",
             orientation="h",
             color=sort_col,
-            color_continuous_scale=[[0, "#1e293b"], [0.5, C["orange"]], [1, C["amber"]]],
+            color_continuous_scale=[[0, "#f0f9ff"], [0.5, C["teal"]], [1, C["indigo"]]],
             labels={"product_name": "", "revenue": "Revenue (Rp)", "qty": "Quantity"},
             text=sort_col,
         )
@@ -366,7 +385,7 @@ with geo_col1:
             x="revenue", y="province",
             orientation="h",
             color="revenue",
-            color_continuous_scale=[[0, "#1e293b"], [0.5, C["cyan"]], [1, C["blue"]]],
+            color_continuous_scale=[[0, "#f0f9ff"], [0.5, C["sky"]], [1, C["indigo"]]],
             title="Revenue per Provinsi (Top 15)",
             labels={"province": "", "revenue": "Revenue (Rp)"},
         )
@@ -389,7 +408,7 @@ with geo_col2:
             path=["province", "city"],
             values="orders",
             color="revenue",
-            color_continuous_scale=[[0, C["card"]], [0.5, C["purple"]], [1, C["orange"]]],
+            color_continuous_scale=[[0, "#f5f3ff"], [0.5, C["indigo"]], [1, C["orange"]]],
             title="Distribusi Orders per Kota",
         )
         fig_city.update_layout(
@@ -423,7 +442,7 @@ with heat_col:
     if not hm.empty:
         fig_hm = px.imshow(
             hm,
-            color_continuous_scale=[[0, C["card"]], [0.4, C["purple"]], [0.8, C["orange"]], [1, C["amber"]]],
+            color_continuous_scale=[[0, "#f0fdf4"], [0.4, C["teal"]], [0.8, C["indigo"]], [1, C["orange"]]],
             aspect="auto",
             labels=dict(x="Jam", y="Hari", color="Orders"),
         )
@@ -447,7 +466,7 @@ with pay_col:
             x="orders", y="payment_method",
             orientation="h",
             color="revenue",
-            color_continuous_scale=[[0, "#1e293b"], [0.5, C["green"]], [1, C["cyan"]]],
+            color_continuous_scale=[[0, "#f0fdf4"], [0.5, C["green"]], [1, C["teal"]]],
             labels={"payment_method": "", "orders": "Orders"},
         )
         fig_pay.update_layout(

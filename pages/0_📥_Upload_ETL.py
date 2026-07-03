@@ -16,41 +16,65 @@ st.set_page_config(
 # ── Styling ────────────────────────────────────────────────────
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
 
-.stProgress > div > div { background: linear-gradient(90deg, #f97316, #fbbf24); }
+.stApp {
+    background: linear-gradient(135deg, #f0f9ff 0%, #fafafa 45%, #fdf4ff 100%);
+}
+section[data-testid="stSidebar"] {
+    background: #ffffff;
+    border-right: 1px solid #e2e8f0;
+}
+section[data-testid="stSidebar"] * { color: #334155 !important; }
+
+.stProgress > div > div { background: linear-gradient(90deg, #0ea5e9, #6366f1); }
 
 .success-box {
-    background: #052e16; border: 1px solid #166534;
-    border-radius: 10px; padding: 1rem 1.2rem; margin: 0.5rem 0;
-    color: #86efac;
+    background: #f0fdf4; border: 1px solid #86efac;
+    border-radius: 12px; padding: 1rem 1.2rem; margin: 0.5rem 0;
+    color: #166534;
 }
 .warning-box {
-    background: #1c1917; border: 1px solid #a16207;
-    border-radius: 10px; padding: 1rem 1.2rem; margin: 0.5rem 0;
-    color: #fde68a;
+    background: #fffbeb; border: 1px solid #fcd34d;
+    border-radius: 12px; padding: 1rem 1.2rem; margin: 0.5rem 0;
+    color: #92400e;
 }
 .error-box {
-    background: #1c0a09; border: 1px solid #991b1b;
-    border-radius: 10px; padding: 1rem 1.2rem; margin: 0.5rem 0;
-    color: #fca5a5;
+    background: #fef2f2; border: 1px solid #fca5a5;
+    border-radius: 12px; padding: 1rem 1.2rem; margin: 0.5rem 0;
+    color: #991b1b;
 }
 .info-card {
-    background: #1e293b; border: 1px solid #334155;
-    border-radius: 10px; padding: 1rem 1.2rem;
+    background: #f0f9ff; border: 1px solid #bae6fd;
+    border-radius: 12px; padding: 1rem 1.2rem;
 }
+div[data-testid="metric-container"] {
+    background: #ffffff; border: 1px solid #e2e8f0;
+    border-radius: 16px; padding: 1rem 1.2rem;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+}
+div[data-testid="metric-container"] label {
+    color: #64748b !important; font-size: 0.8rem !important;
+}
+div[data-testid="metric-container"] [data-testid="metric-value"] {
+    color: #0f172a !important; font-size: 1.5rem !important; font-weight: 700 !important;
+}
+hr { border-color: #e2e8f0 !important; }
+.stDataFrame { border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; }
+div[data-testid="stAlert"] { border-radius: 12px; }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ── Header ─────────────────────────────────────────────────────
 st.markdown("""
 <h2 style="
-    background: linear-gradient(135deg, #f97316, #fbbf24);
+    background: linear-gradient(135deg, #0ea5e9, #6366f1, #f97316);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    background-clip: text; margin-bottom: 0;
+    background-clip: text; margin-bottom: 0; font-weight: 800;
 ">📥 Upload & ETL Pipeline</h2>
-<p style="color:#94a3b8; margin-top:0.2rem;">
+<p style="color:#64748b; margin-top:0.2rem;">
     Upload data ekspor Shopee → Otomatis diproses → Simpan ke database
 </p>
 """, unsafe_allow_html=True)
@@ -228,13 +252,14 @@ if run_btn or st.session_state.get("etl_done"):
         with cols[i % 4]:
             st.markdown(f"""
             <div style="
-                background:#1e293b; border:1px solid #334155;
-                border-left:4px solid {color}; border-radius:8px;
+                background:#ffffff; border:1px solid #e2e8f0;
+                border-left:4px solid {color}; border-radius:12px;
                 padding:0.8rem; margin-bottom:0.5rem; text-align:center;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.04);
             ">
-                <div style="color:{color}; font-size:0.75rem; font-weight:600;">{label}</div>
-                <div style="color:#f8fafc; font-size:1.4rem; font-weight:700;">{len(df_tbl):,}</div>
-                <div style="color:#64748b; font-size:0.7rem;">baris</div>
+                <div style="color:{color}; font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.05em;">{label}</div>
+                <div style="color:#0f172a; font-size:1.5rem; font-weight:800;">{len(df_tbl):,}</div>
+                <div style="color:#94a3b8; font-size:0.7rem;">baris</div>
             </div>
             """, unsafe_allow_html=True)
 
