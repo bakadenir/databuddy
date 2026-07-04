@@ -50,14 +50,12 @@ class DimDate(Base):
     __tablename__ = "dim_date"
 
     date_id          = Column(Integer, primary_key=True)   # format YYYYMMDD
-    order_created_at = Column(DateTime)
     tanggal_pesanan  = Column(Date)
     tahun            = Column(Integer)
     kuartal          = Column(Integer)
     bulan            = Column(Integer)
     nama_bulan       = Column(String(20))
     hari             = Column(String(20))
-    jam              = Column(Integer)
 
 
 class DimPayment(Base):
@@ -101,6 +99,10 @@ class FactOrderItem(Base):
     # Flags
     is_completed = Column(SmallInteger, default=0)
     is_cancelled = Column(SmallInteger, default=0)
+
+    # Waktu Transaksi Spesifik
+    order_created_at = Column(DateTime)
+    jam              = Column(Integer)
 
     # Indexes
     __table_args__ = (

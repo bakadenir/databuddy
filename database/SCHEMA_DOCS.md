@@ -20,14 +20,12 @@ dim_shipping ►─────────────────────�
 | Kolom | Tipe | Keterangan |
 |-------|------|------------|
 | `date_id` | INTEGER PK | Format YYYYMMDD (e.g., 20240115) |
-| `order_created_at` | TIMESTAMP | Timestamp lengkap pesanan |
 | `tanggal_pesanan` | DATE | Tanggal saja (tanpa jam) |
 | `tahun` | INTEGER | e.g., 2024 |
 | `kuartal` | INTEGER | 1–4 |
 | `bulan` | INTEGER | 1–12 |
 | `nama_bulan` | VARCHAR | "Januari", "Februari", ... |
 | `hari` | VARCHAR | "Senin", "Selasa", ... |
-| `jam` | INTEGER | 0–23 |
 
 ### `dim_product`
 | Kolom | Tipe | Keterangan |
@@ -93,6 +91,8 @@ dim_shipping ►─────────────────────�
 | `valid_item_revenue` | BIGINT | Revenue valid (non-cancelled) |
 | `is_completed` | SMALLINT | 1 = selesai, 0 = tidak |
 | `is_cancelled` | SMALLINT | 1 = dibatalkan, 0 = tidak |
+| `order_created_at` | TIMESTAMP | Waktu transaksi spesifik item ini |
+| `jam` | INTEGER | Jam transaksi spesifik (0-23) |
 
 ---
 

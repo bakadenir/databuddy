@@ -230,14 +230,12 @@ def build_dim_date(df: pd.DataFrame) -> pd.DataFrame:
 
     dim = pd.DataFrame({
         "date_id": unique_dates["date_id"],
-        "order_created_at": unique_dates["Waktu Pesanan Dibuat"],
         "tanggal_pesanan": unique_dates["Waktu Pesanan Dibuat"].dt.date,
         "tahun": unique_dates["Waktu Pesanan Dibuat"].dt.year,
         "kuartal": unique_dates["Waktu Pesanan Dibuat"].dt.quarter,
         "bulan": unique_dates["Waktu Pesanan Dibuat"].dt.month,
         "nama_bulan": unique_dates["Waktu Pesanan Dibuat"].dt.month.map(NAMA_BULAN_ID),
         "hari": unique_dates["Waktu Pesanan Dibuat"].dt.day_name().map(NAMA_HARI_ID),
-        "jam": unique_dates["Waktu Pesanan Dibuat"].dt.hour,
     })
 
     print(f"[OK] dim_date: {len(dim)} hari unik (kalender harian, bukan per transaksi ✓)")
@@ -292,8 +290,12 @@ def build_fact_order_item(
     """
     fact = df.copy()
 
-    # date_id dari timestamp
+    # date_id dari timestamp (untuk join ke dim_date)
     fact["date_id"] = fact["Waktu Pesanan Dibuat"].dt.strftime("%Y%m%d").astype(int)
+    
+    # Simpan waktu spesifik di fact table agar tidak hilang saat agregasi harian di dim_date
+    fact["order_created_at"] = fact["Waktu Pesanan Dibuat"]
+    fact["jam"] = fact["Waktu Pesanan Dibuat"].dt.hour
 
     # Join semua dimensi
     fact = fact.merge(
@@ -356,6 +358,8 @@ def build_fact_order_item(
         "valid_item_revenue": fact["valid_item_revenue"],
         "is_completed": fact["is_completed"],
         "is_cancelled": fact["is_cancelled"],
+        "order_created_at": fact["order_created_at"],
+        "jam": fact["jam"],
     })
 
     print(f"[OK] fact_order_item: {len(fact_order_item)} baris transaksi")

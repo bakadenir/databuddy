@@ -40,14 +40,12 @@ CREATE TABLE dim_location (
 -- Tabel Waktu (date_id = format YYYYMMDD)
 CREATE TABLE dim_date (
     date_id INTEGER PRIMARY KEY,
-    order_created_at TIMESTAMP,
     tanggal_pesanan DATE,
     tahun INTEGER,
     kuartal INTEGER,
     bulan INTEGER,
     nama_bulan VARCHAR(20),
-    hari VARCHAR(20),
-    jam INTEGER
+    hari VARCHAR(20)
 );
 
 -- Tabel Pembayaran
@@ -88,7 +86,11 @@ CREATE TABLE fact_order_item (
 
     -- Flags
     is_completed SMALLINT DEFAULT 0,
-    is_cancelled SMALLINT DEFAULT 0
+    is_cancelled SMALLINT DEFAULT 0,
+    
+    -- Waktu Transaksi Spesifik
+    order_created_at TIMESTAMP,
+    jam INTEGER
 );
 
 -- ==========================================

@@ -27,10 +27,12 @@ def build_master(tables: dict) -> pd.DataFrame:
     # Konversi tipe
     for col in ["quantity", "original_price", "discounted_price",
                 "total_discount", "valid_item_revenue"]:
-        fact[col] = pd.to_numeric(fact[col], errors="coerce").fillna(0)
+        fact[col] = pd.to_numeric(fact[col], errors="coerce")
+        fact[col] = fact[col].fillna(0)
 
     for col in ["is_completed", "is_cancelled"]:
-        fact[col] = pd.to_numeric(fact[col], errors="coerce").fillna(0).astype(int)
+        fact[col] = pd.to_numeric(fact[col], errors="coerce")
+        fact[col] = fact[col].fillna(0).astype(int)
 
     fact["date_id"] = pd.to_numeric(fact["date_id"], errors="coerce")
     fact["product_id"] = pd.to_numeric(fact["product_id"], errors="coerce")
@@ -83,13 +85,14 @@ def kpi_overview(df: pd.DataFrame) -> dict:
 
 def sales_trend(df: pd.DataFrame, freq: str = "D") -> pd.DataFrame:
     """
-    freq: 'D'=harian, 'W'=mingguan, 'ME'=bulanan
+    freq: 'H'=jam, 'D'=harian, 'W'=mingguan, 'ME'=bulanan
     """
     completed = df[df["is_completed"] == 1].copy()
-    completed = completed.dropna(subset=["tanggal_pesanan"])
+    assert isinstance(completed, pd.DataFrame)
+    completed = completed.dropna(subset=["order_created_at"])
 
     trend = (
-        completed.groupby(pd.Grouper(key="tanggal_pesanan", freq=freq))
+        completed.groupby(pd.Grouper(key="order_created_at", freq=freq))
         .agg(
             revenue=("valid_item_revenue", "sum"),
             orders=("order_id", "nunique"),
@@ -220,8 +223,8 @@ def repeat_buyer_stats(df: pd.DataFrame) -> dict:
     total_cust = len(order_counts)
     return {
         "total_customers": total_cust,
-        "repeat_buyers":   int(repeat),
-        "one_time_buyers": int(total_cust - repeat),
+        "repeat_buyers":   repeat,
+        "one_time_buyers": total_cust - repeat,
         "repeat_rate":     round(repeat / total_cust * 100, 1) if total_cust > 0 else 0,
         "order_counts":    order_counts,
     }

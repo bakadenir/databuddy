@@ -1,5 +1,5 @@
 """
-pages/2_🤖_ML_Models.py
+pages/2_ML_Models.py
 Machine Learning Models — akan diimplementasi di Phase 3
 """
 
