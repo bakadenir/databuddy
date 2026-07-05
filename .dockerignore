@@ -1,0 +1,10 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.vscode
+.claude
+.env
+dataset.xlsx
+*.log

@@ -9,7 +9,7 @@ Logika HPP Source of Truth:
 """
 
 import pandas as pd
-from typing import Optional
+from typing import Optional, Any
 from core.config import config
 
 
@@ -56,8 +56,16 @@ def _upsert_dimension(
     id_col = [c for c in df.columns if c.endswith("_id") and c != conflict_col]
     df_upload = df.drop(columns=id_col, errors="ignore")
 
+    # Handle date serialization untuk dim_date
+    if table_name == "dim_date" and "tanggal_pesanan" in df_upload.columns:
+        df_upload = df_upload.copy()
+        df_upload["tanggal_pesanan"] = df_upload["tanggal_pesanan"].astype(str)
+
+    # Handle NaN values - replace with None
+    df_upload = df_upload.where(pd.notnull(df_upload), None)
+
     records = df_upload.to_dict(orient="records")
-    result = {"table": table_name, "attempted": len(records), "error": None}
+    result: dict[str, Any] = {"table": table_name, "attempted": len(records), "error": None}
 
     try:
         # on_conflict="ignore" → skip jika conflict_col sudah ada
@@ -83,7 +91,7 @@ def _insert_fact(client, df: pd.DataFrame) -> dict:
 
     Kolom fact_order_item_id tidak ikut (SERIAL Supabase).
     """
-    result = {"table": "fact_order_item", "error": None}
+    result: dict[str, Any] = {"table": "fact_order_item", "error": None}
 
     try:
         # 1. Ambil order_id yang sudah ada
@@ -102,10 +110,51 @@ def _insert_fact(client, df: pd.DataFrame) -> dict:
             result["success"] = True
             return result
 
-        # 3. Insert batch (chunk 500 per request agar tidak timeout)
+        # 3. Handle NaN & type conversion
+        df_new = df_new.copy()
+
+        # Ganti NaN di SEMUA kolom dengan None
+        df_new = df_new.where(pd.notnull(df_new), None)
+
+        print(f"[DEBUG] Sample data sebelum convert: {df_new[['quantity', 'original_price']].head(3).to_dict('records')}")
+
+        # Khusus untuk kolom numerik — convert dengan lebih robust
+        for col in ["quantity", "original_price", "discounted_price", "total_discount", "valid_item_revenue"]:
+            if col in df_new.columns:
+                # Convert semua ke numeric, coerce error jadi NaN
+                df_new[col] = pd.to_numeric(df_new[col], errors="coerce")
+                # Fill NaN dengan 0
+                df_new[col] = df_new[col].fillna(0)
+                # Round ke integer
+                df_new[col] = df_new[col].round(0)
+                # Convert ke integer — force conversion
+                df_new[col] = df_new[col].astype(int)
+                # Validate sudah integer
+                assert df_new[col].dtype in ['int', 'int64'], f"{col} masih bukan integer! dtype: {df_new[col].dtype}"
+
+        print(f"[DEBUG] Sample data setelah convert: {df_new[['quantity', 'original_price']].head(3).to_dict('records')}")
+
+        # 4. Insert batch (chunk 500 per request agar tidak timeout)
         CHUNK = 500
         for i in range(0, len(df_new), CHUNK):
-            chunk = df_new.iloc[i:i + CHUNK]
+            chunk = df_new.iloc[i:i + CHUNK].copy()
+            # Convert chunk numerik ke integer untuk JSON compliance
+            for col in ["quantity", "original_price", "discounted_price", "total_discount", "valid_item_revenue", "jam", "is_completed", "is_cancelled"]:
+                if col in chunk.columns:
+                    chunk[col] = pd.to_numeric(chunk[col], errors="coerce").fillna(0).round(0).astype(int)  # type: ignore
+            
+            # Convert FKs ke Int64 lalu ke object agar bisa jadi None (mencegah float 5.0 di JSON)
+            for col in ["date_id", "product_id", "customer_id", "payment_id", "location_id", "status_id", "shipping_id"]:
+                if col in chunk.columns:
+                    chunk[col] = pd.to_numeric(chunk[col], errors="coerce").astype("Int64").astype(object)  # type: ignore
+
+            # Convert Timestamp to string for JSON serialization
+            if "order_created_at" in chunk.columns:
+                chunk["order_created_at"] = chunk["order_created_at"].astype(str).replace({"NaT": None, "nan": None, "None": None})
+
+            # Ganti NaN dengan None di semua kolom
+            chunk = chunk.where(pd.notnull(chunk), None)
+            
             client.table("fact_order_item").insert(
                 chunk.to_dict(orient="records")
             ).execute()
@@ -149,11 +198,16 @@ def upload_all(tables: dict[str, pd.DataFrame]) -> list[dict]:
     # ── Dimensi (urutan penting! fact bergantung pada dimensi) ─
     results.append(_upsert_dimension(client, "dim_product",  tables["dim_product"],  "sku"))
     results.append(_upsert_dimension(client, "dim_customer", tables["dim_customer"], "customer_username"))
-    results.append(_upsert_dimension(client, "dim_location", tables["dim_location"], "city"))
+    # Skip dim_location & dim_shipping sementara (perlu fix schema)
+    # results.append(_upsert_dimension(client, "dim_location", tables["dim_location"], "city"))
+    # results.append(_upsert_dimension(client, "dim_shipping", tables["dim_shipping"], "service_type"))
     results.append(_upsert_dimension(client, "dim_date",     tables["dim_date"],     "date_id"))
     results.append(_upsert_dimension(client, "dim_payment",  tables["dim_payment"],  "payment_method"))
     results.append(_upsert_dimension(client, "dim_status",   tables["dim_status"],   "order_status"))
-    results.append(_upsert_dimension(client, "dim_shipping", tables["dim_shipping"], "service_type"))
+
+    # Manual upsert untuk dim_location & dim_shipping
+    results.append(_manual_upsert_location(client, tables["dim_location"]))
+    results.append(_manual_upsert_shipping(client, tables["dim_shipping"]))
 
     # ── Fact (setelah semua dimensi) ───────────────────────────
     # Re-resolve foreign keys dari Supabase (ID bisa beda dengan ID lokal)
@@ -191,23 +245,6 @@ def _resolve_fk_from_supabase(client, tables: dict) -> dict:
 
     fact = tables["fact_order_item"].copy()
 
-    # Re-join untuk overwrite local IDs dengan Supabase IDs
-    # Kita perlu data join key dari tabel dimensi lokal
-    dim_prod = tables["dim_product"][["sku", "product_id"]].rename(
-        columns={"product_id": "product_id_local"}
-    )
-    # Karena fact sudah punya product_id lokal, kita pakai sku mapping
-    # Lebih aman: merge via sku
-    fact = fact.drop(columns=["product_id"], errors="ignore")
-    # Kita tidak punya sku di fact langsung, ambil dari dim_product lokal
-    fact = fact.merge(
-        tables["dim_product"][["product_id", "sku"]].rename(
-            columns={"product_id": "local_pid"}
-        ),
-        left_on="product_id" if "product_id" in fact.columns else None,
-        right_on="local_pid", how="left"
-    ) if "product_id" in tables["fact_order_item"].columns else fact
-
     # Simpler approach: just use Supabase IDs via lookup dicts
     prod_map     = dict(zip(sb_product["sku"],                sb_product["product_id"]))
     cust_map     = dict(zip(sb_customer["customer_username"], sb_customer["customer_id"]))
@@ -218,25 +255,27 @@ def _resolve_fk_from_supabase(client, tables: dict) -> dict:
     # Rebuild fact dengan local dimensions sebagai bridge untuk re-mapping
     local_fact = tables["fact_order_item"].copy()
     local_dim_prod = tables["dim_product"][["product_id", "sku"]]
-    local_dim_cust = tables["dim_customer"]
-    local_dim_pay  = tables["dim_payment"]
-    local_dim_stat = tables["dim_status"]
-    local_dim_ship = tables["dim_shipping"]
-    local_dim_loc  = tables["dim_location"]
+
+    # Untuk dimensi lain, join untuk dapat nilai text (untuk mapping ke Supabase)
+    local_dim_cust = tables["dim_customer"][["customer_id", "customer_username"]]
+    local_dim_pay  = tables["dim_payment"][["payment_id", "payment_method"]]
+    local_dim_stat = tables["dim_status"][["status_id", "order_status"]]
+    local_dim_ship = tables["dim_shipping"][["shipping_id", "service_type"]]
+    local_dim_loc  = tables["dim_location"][["location_id", "city", "province"]]
 
     # Merge lokal untuk mendapatkan nilai text (bridge ke Supabase ID)
-    f = local_fact.merge(local_dim_prod, on="product_id", how="left")
-    f = f.merge(local_dim_cust, on="customer_id", how="left")
-    f = f.merge(local_dim_pay, on="payment_id", how="left")
-    f = f.merge(local_dim_stat, on="status_id", how="left")
-    f = f.merge(local_dim_ship, on="shipping_id", how="left")
-    f = f.merge(local_dim_loc, on="location_id", how="left")
+    f = local_fact.merge(local_dim_prod, on="product_id", how="left", suffixes=("", "_prod"))
+    f = f.merge(local_dim_cust, on="customer_id", how="left", suffixes=("", "_cust"))
+    f = f.merge(local_dim_pay, on="payment_id", how="left", suffixes=("", "_pay"))
+    f = f.merge(local_dim_stat, on="status_id", how="left", suffixes=("", "_stat"))
+    f = f.merge(local_dim_ship, on="shipping_id", how="left", suffixes=("", "_ship"))
+    f = f.merge(local_dim_loc, on="location_id", how="left", suffixes=("", "_loc"))
 
     loc_map = {}
     for _, row in sb_location.iterrows():
         loc_map[(row["city"], row["province"])] = row["location_id"]
 
-    # Assign Supabase IDs
+    # Assign Supabase IDs - gunakan kolom yang sudah di-merge
     f["product_id"]  = f["sku"].map(prod_map)
     f["customer_id"] = f["customer_username"].map(cust_map)
     f["payment_id"]  = f["payment_method"].map(pay_map)
@@ -253,9 +292,78 @@ def _resolve_fk_from_supabase(client, tables: dict) -> dict:
         "quantity", "original_price", "discounted_price",
         "total_discount", "valid_item_revenue",
         "is_completed", "is_cancelled",
+        "jam", "order_created_at"
     ]]
 
     print("[OK] Foreign keys resolved dari Supabase ✓")
     tables_out = dict(tables)
     tables_out["fact_order_item"] = fact_final
     return tables_out
+
+
+def _manual_upsert_location(client, df: pd.DataFrame) -> dict:
+    """Manual upsert untuk dim_location (composite UNIQUE constraint)"""
+    result: dict[str, Any] = {"table": "dim_location", "attempted": len(df), "error": None, "success": False}
+
+    try:
+        # Ambil existing data untuk comparison
+        existing = client.table("dim_location").select("*").execute()
+        if existing.data:
+            existing_df = pd.DataFrame(existing.data)
+            # Filter hanya yang belum ada
+            merged = df.merge(
+                existing_df[["city", "province"]],
+                on=["city", "province"],
+                how="left",
+                indicator=True
+            )
+            new_data = merged[merged["_merge"] == "left_only"][["city", "province"]].drop_duplicates()
+        else:
+            new_data = df[["city", "province"]].drop_duplicates()
+
+        if not new_data.empty:
+            client.table("dim_location").insert(
+                new_data.to_dict(orient="records")  # type: ignore
+            ).execute()
+
+        result["success"] = True
+        print(f"[OK] dim_location: {len(df)} processed, {len(new_data) if not new_data.empty else 0} new inserts")
+    except Exception as e:
+        result["error"] = str(e)
+        print(f"[ERROR] dim_location: {e}")
+
+    return result
+
+
+def _manual_upsert_shipping(client, df: pd.DataFrame) -> dict:
+    """Manual upsert untuk dim_shipping (UNIQUE on service_type)"""
+    result: dict[str, Any] = {"table": "dim_shipping", "attempted": len(df), "error": None, "success": False}
+
+    try:
+        # Ambil existing data untuk comparison
+        existing = client.table("dim_shipping").select("*").execute()
+        if existing.data:
+            existing_df = pd.DataFrame(existing.data)
+            # Filter hanya yang belum ada
+            merged = df.merge(
+                existing_df[["service_type"]],
+                on="service_type",
+                how="left",
+                indicator=True
+            )
+            new_data = merged[merged["_merge"] == "left_only"][["courier_name", "service_type"]].drop_duplicates()
+        else:
+            new_data = df[["courier_name", "service_type"]].drop_duplicates()
+
+        if not new_data.empty:
+            client.table("dim_shipping").insert(
+                new_data.to_dict(orient="records")  # type: ignore
+            ).execute()
+
+        result["success"] = True
+        print(f"[OK] dim_shipping: {len(df)} processed, {len(new_data) if not new_data.empty else 0} new inserts")
+    except Exception as e:
+        result["error"] = str(e)
+        print(f"[ERROR] dim_shipping: {e}")
+
+    return result

@@ -226,10 +226,8 @@ else:
                     st.session_state["etl_tables"] = tables
                     st.session_state["etl_done"] = True
                     st.cache_data.clear()
-                    st.success("✅ ETL selesai! Mengalihkan ke Dashboard...")
-                    import time
-                    time.sleep(1.5)
-                    st.switch_page("pages/1_Dashboard.py")
+                    st.success("✅ ETL selesai! Data siap dianalisis.")
+                    st.balloons()
                 except Exception as e:
                     st.error(f"❌ ETL gagal: {e}")
                     st.exception(e)
@@ -328,6 +326,34 @@ else:
                 )
             else:
                 st.info("Jalankan ETL dulu untuk melihat diagnostik harga.")
+
+        # ── Next Steps ────────────────────────────────────────────────
+        st.markdown(f"""
+        <div style="margin: {SPACING['xl']} 0;">
+            <div style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 20px; padding: 2rem; text-align: center; color: white;">
+                <h2 style="font-size: 1.5rem; font-weight: 800; margin: 0 0 0.5rem 0;">🎉 Data Siap Dianalisis!</h2>
+                <p style="margin: 0 0 1.5rem 0; opacity: 0.9;">Pilih langkah selanjutnya:</p>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        next_col1, next_col2, next_col3 = st.columns(3)
+
+        with next_col1:
+            if st.button("📊 Lihat Dashboard", use_container_width=True, key="goto_dashboard"):
+                st.switch_page("pages/1_Dashboard.py")
+
+        with next_col2:
+            if st.button("💬 Tanya AI Chatbox", use_container_width=True, key="goto_chatbox"):
+                st.switch_page("pages/3_Chatbox.py")
+
+        with next_col3:
+            st.markdown(
+                "<div style='color: #64748b; font-size: 0.85rem; padding-top: 0.75rem;'>Atau download data di bawah ↓</div>",
+                unsafe_allow_html=True
+            )
+
+        st.markdown(f'<div style="margin: {SPACING["lg"]} 0;"></div>', unsafe_allow_html=True)
 
         # ── Simpan / Upload ────────────────────────────────────────
         section_header("Simpan Hasil", "💾", "Pilih opsi penyimpanan data")

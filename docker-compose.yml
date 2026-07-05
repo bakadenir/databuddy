@@ -1,0 +1,48 @@
+name: databuddy
+
+services:
+  web:
+    build: .
+    container_name: databuddy_web
+    restart: always
+    environment:
+      # Arahkan OLLAMA_URL ke internal container 'ollama' pada port 11434
+      - OLLAMA_URL=http://ollama:11434/api/chat
+    env_file:
+      - .env
+    volumes:
+      - ./.streamlit:/app/.streamlit
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: databuddy_ollama
+    restart: always
+    volumes:
+      # Simpan data model LLM di volume agar tidak hilang saat direstart
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          # Alokasikan RAM yang cukup untuk qwen2.5:3b (min 4GB disarankan)
+          memory: 4G
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: databuddy_caddy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+
+volumes:
+  ollama_data:
+  caddy_data:
+  caddy_config:

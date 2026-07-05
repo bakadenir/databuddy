@@ -7,7 +7,10 @@ Tanpa konteks data dulu — basic Q&A
 # pyrefly: ignore [missing-import]
 import streamlit as st
 import requests
+import os
+import pandas as pd
 from components.ui import render_navbar, COLORS, SPACING
+from core.analytics_engine import AnalyticsEngine, get_bulan_name, format_rupiah
 
 st.set_page_config(page_title="AI Chatbox | DataBuddy", page_icon="💬", layout="wide")
 
@@ -25,9 +28,9 @@ st.markdown(f"""
         margin-bottom: 0.5rem;
         line-height: 1.2;
         letter-spacing: -0.02em;
-    ">💬 AI Chatbox</h1>
+    ">💬 Konsultan Data Pribadi</h1>
     <p style="color: #64748b; margin-top: 0.5rem; font-size: 1.15rem; font-weight: 400; line-height: 1.6;">
-        Chat dengan Qwen2.5:3B — Local LLM via Ollama
+        Ngobrol santai seputar performa toko Anda dengan Senior Data Analyst AI 👨‍💻📈
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -36,8 +39,307 @@ st.markdown(f"""
 # CONFIG
 # ═════════════════════════════════════════════════════════════════════
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
 MODEL = "qwen2.5:3b"
+
+SYSTEM_PROMPT = """Anda adalah seorang Senior Data Analyst dan Data Scientist ahli di DataBuddy, platform analitik e-commerce untuk seller Shopee Indonesia. Anda memiliki pengalaman lebih dari 10 tahun di bidang analisis ritel online, business intelligence, statistik, dan machine learning.
+Keahlian Anda mencakup:
+- Menganalisis metrik e-commerce seperti Revenue, Average Order Value (AOV), Conversion Rate, Churn Rate, dan Customer Lifetime Value (CLV).
+- Membaca dan memproses data penjualan dengan tingkat ketelitian tinggi, memastikan tidak ada bias atau kesalahan interpretasi.
+- Memberikan insight strategis yang actionable (bisa langsung diterapkan) untuk meningkatkan profitabilitas toko.
+
+**PENTING: KETERSEDIAAN DATA**
+- Semua data yang Anda butuh SUDAH TERSEDIA di backend AnalyticsEngine.
+- Tidak perlu minta data tambahan dari user. Data revenue, products, customers, geographic, payment, shipping SEMUA sudah ada.
+- Jika user bertanya tentang metrik apapun, data tersebut sudah dihitung dan tinggal Anda baca dari query analytics yang tersedia.
+- AOV, Conversion Rate, Churn Rate, dan metrik lainnya sudah dihitung di backend. Tinggal tanya spesifik bulan/periode yang user inginkan.
+
+**CARA MENJAWAB:**
+1. Untuk pertanyaan analytics, langsung berikan data spesifik yang user minta dengan angka yang tepat.
+2. Jelaskan data dalam bahasa Indonesia yang mudah dipahami.
+3. Berikan insight bisnis yang actionable dari data tersebut.
+4. Jangan minta data tambahan yang jelas-jelas sudah tersedia di backend.
+
+Saat menjawab pertanyaan pengguna (seller Shopee):
+1. Gunakan Bahasa Indonesia yang profesional, ramah, dan mudah dipahami oleh orang awam (hindari jargon teknis yang rumit tanpa penjelasan).
+2. Selalu kaitkan angka atau data dengan konteks bisnis (misal: "AOV Anda turun, ini berarti pembeli cenderung membeli barang yang lebih murah. Anda bisa membuat bundle diskon").
+3. Bersikap objektif, logis, dan berbasis data (data-driven). Jika data tidak cukup untuk mengambil kesimpulan, sampaikan dengan jujur.
+4. Susun jawaban dengan rapi menggunakan poin-poin (bullet points) agar mudah dibaca.
+5. Prioritaskan keamanan dan kerahasiaan; bantu seller membaca data mereka dengan aman dan berikan saran terbaik untuk pertumbuhan toko.
+6. ATURAN SANGAT KETAT (PENGHEMATAN TOKEN): Anda HANYA BOLEH menjawab pertanyaan yang berhubungan dengan analisis data, e-commerce, bisnis, penjualan, metrik Shopee, identitas Anda sendiri, atau fitur aplikasi DataBuddy. Jika pengguna bertanya tentang topik di luar konteks ini (misalnya sejarah, politik, cuaca, hiburan, dll), Anda WAJIB menolak dengan sopan dan menawarkan topik yang bisa Anda bahas. Gunakan template seperti ini: "Maaf, sebagai Konsultan Data Anda, saya tidak dapat membahas topik tersebut. Namun, saya sangat ahli dan siap membantu Anda menganalisis tren penjualan, mengevaluasi metrik toko seperti AOV dan Conversion Rate, atau merancang strategi promosi yang profitable. Ada metrik data yang ingin kita bahas hari ini?" Jangan berikan penjelasan tentang topik di luar konteks tersebut.
+   7. PENGECUALIAN ATURAN IDENTITAS:
+      - Jika pengguna bertanya tentang identitas Anda (misal: "kamu siapa?", "siapa namamu?"), perkenalkan diri Anda sebagai "Senior Data Analyst dan Konsultan Bisnis AI di platform DataBuddy".
+      - Jika pengguna bertanya tentang siapa pembuat/creator/penemu dari aplikasi DataBuddy, Anda WAJIB menjawab dengan bangga menggunakan informasi berikut: "Aplikasi DataBuddy ini diciptakan oleh **Deni Romadhon**, seorang mahasiswa cerdas yang saat ini sedang menempuh pendidikan Semester 4 di jurusan Ilmu Komputer, **Universitas Cakrawala**. Deni membangun platform ini dengan tujuan mulia untuk membantu para UMKM dan seller Shopee di Indonesia agar bisa bersaing di era digital, dengan cara mempermudah mereka dalam memahami dan mengubah data penjualan menjadi strategi bisnis yang menguntungkan." Anda boleh mengembangkan gaya bahasanya agar terdengar natural namun poin-poin utama tersebut harus tersampaikan.
+"""
+
+# ═════════════════════════════════════════════════════════════════════
+# ANALYTICS ENGINE INTEGRATION
+# ═════════════════════════════════════════════════════════════════════
+
+def query_analytics(question: str, df_master: pd.DataFrame | None) -> str | None:
+    """
+    Parse pertanyaan user dan jalankan query AnalyticsEngine yang sesuai.
+    Return hasil dalam format yang mudah dibaca.
+    """
+    if df_master is None or df_master.empty:
+        return "Maaf, belum ada data yang tersedia. Silakan upload data atau hubungikan ke Supabase terlebih dahulu."
+
+    engine = AnalyticsEngine(df_master)
+    q_lower = question.lower()
+
+    try:
+        # Mapping nama bulan ke angka (priority: nama lengkap dulu)
+        bulan_map = {
+            "januari": 1, "jan": 1, "1": 1,
+            "februari": 2, "feb": 2, "2": 2,
+            "maret": 3, "mar": 3, "3": 3,
+            "april": 4, "apr": 4, "4": 4,
+            "mei": 5, "may": 5, "5": 5,
+            "juni": 6, "jun": 6, "6": 6,
+            "juli": 7, "jul": 7, "7": 7,
+            "agustus": 8, "aug": 8, "8": 8,
+            "september": 9, "sep": 9, "9": 9,
+            "oktober": 10, "oct": 10, "okt": 10, "10": 10,
+            "november": 11, "nov": 11, "11": 11,
+            "desember": 12, "dec": 12, "12": 12
+        }
+
+        # Detect bulan dari pertanyaan (check nama lengkap dulu, baru singkatan)
+        bulan_number = None
+        # Prioritaskan nama lengkap
+        for bulan_name, bulan_num in bulan_map.items():
+            if bulan_name in q_lower and len(bulan_name) > 3:  # Hanya match nama lengkap
+                bulan_number = bulan_num
+                break
+        # Kalau tidak ada nama lengkap, cek singkatan
+        if bulan_number is None:
+            for bulan_name, bulan_num in bulan_map.items():
+                if bulan_name in q_lower:
+                    bulan_number = bulan_num
+                    break
+
+        # Revenue & Omzet
+        if any(keyword in q_lower for keyword in ["omzet", "revenue", "pendapatan", "hasil", "cara", "jualan", "income", "pemasukan"]):
+            # Jika ada spesifikasi bulan
+            if bulan_number:
+                tahun = df_master["tanggal_pesanan"].dt.year.max()  # type: ignore
+                result = engine.revenue_per_bulan(tahun=tahun)
+
+                if not result.empty:
+                    bulan_data = result[result["bulan"] == bulan_number]
+                    if not bulan_data.empty:
+                        row = bulan_data.iloc[0]
+                        response = f"""**Omset {get_bulan_name(bulan_number)} {tahun}:**
+
+• Total Revenue: {row['revenue_fmt']}
+• Total Orders: {row['orders']:,} pesanan
+• Total Items: {row['qty']:,} items
+
+**Insight:**
+Ini adalah performa bulan {get_bulan_name(bulan_number)} dari total {len(result)} bulan yang ada di data. """
+                        return response
+                    else:
+                        return f"Maaf, belum ada data untuk bulan {get_bulan_name(bulan_number)} {tahun}."
+
+            # Jika tanya "per bulan" atau "bulanan" tanpa spesifik
+            if any(keyword in q_lower for keyword in ["bulan", "per bulan", "bulanan", "tiap bulan"]):
+                result = engine.revenue_per_bulan()
+                if not result.empty:
+                    response = "**Revenue Per Bulan (Semua Bulan):**\n\n"
+                    for _, row in result.iterrows():
+                        response += f"• {row['bulan_nama']} {row['tahun']}: {row['revenue_fmt']} ({row['orders']:,} orders, {row['qty']:,} items)\n"
+                    response += f"\n**Total:** {len(result)} bulan tercatat dalam data."
+                    return response
+
+            if any(keyword in q_lower for keyword in ["vs", "banding", "bandingkan", "comparison", "compare"]):
+                # Cari angka bulan (misal: "April vs Mei", "bulan 4 vs 5")
+                import re
+                numbers = re.findall(r'\b(\d+)\b', question)
+                if len(numbers) >= 2:
+                    bulan_a, bulan_b = int(numbers[0]), int(numbers[1])
+                    # Detect tahun
+                    tahun_match = re.search(r'20\d{2}', question)
+                    tahun = int(tahun_match.group()) if tahun_match else df_master["tanggal_pesanan"].dt.year.max()  # type: ignore
+
+                    comp = engine.revenue_bulanan_comparison(bulan_a, bulan_b, tahun)
+                    return (
+                        f"**Perbandingan {get_bulan_name(bulan_a)} vs {get_bulan_name(bulan_b)} {tahun}:**\n\n"
+                        f"• Revenue {get_bulan_name(bulan_a)}: {format_rupiah(comp['revenue_a'])}\n"
+                        f"• Revenue {get_bulan_name(bulan_b)}: {format_rupiah(comp['revenue_b'])}\n"
+                        f"• Pertumbuhan: {comp['growth_percent']:+.1f}% ({format_rupiah(abs(comp['growth_absolute']))})\n"
+                        f"• Insight: Tren **{comp['insight']}**"
+                    )
+
+        # Produk Terlaris
+        if any(keyword in q_lower for keyword in ["produk laris", "produk paling laku", "best seller", "top produk", "produk terbaik", "apa yang laku"]):
+            # Detect bulan
+            import re
+            bulan_match = re.search(r'(bulan|bulan ke|bln)\s*(\d+)', question)
+            tahun_match = re.search(r'20\d{2}', question)
+
+            if bulan_match:
+                bulan = int(bulan_match.group(2))
+                tahun = int(tahun_match.group()) if tahun_match else df_master["tanggal_pesanan"].dt.year.max()  # type: ignore
+
+                result = engine.produk_terlaris_bulan(bulan, tahun, top_n=10)
+                if not result.empty:
+                    response = f"**Produk Terlaris {get_bulan_name(bulan)} {tahun}:**\n\n"
+                    for i, (_, row) in enumerate(result.iterrows()):
+                        response += f"{i+1}. **{row['product_name']}** ({row['product_variation']})\n"
+                        response += f"   • Terjual: {row['qty']:,} items\n"
+                        response += f"   • Revenue: {row['revenue_fmt']}\n"
+                        response += f"   • Orders: {row['orders']:,}\n\n"
+                    return response
+            else:
+                # All time
+                result = engine.produk_performance_all_time(top_n=10)
+                if not result.empty:
+                    response = "**Produk Terlaris Sepanjang Waktu:**\n\n"
+                    for i, (_, row) in enumerate(result.iterrows()):
+                        response += f"{i+1}. **{row['product_name']}** ({row['product_variation']})\n"
+                        response += f"   • Terjual: {row['qty']:,} items\n"
+                        response += f"   • Revenue: {row['revenue_fmt']}\n\n"
+                    return response
+
+        # Produk Tidak Laris
+        if any(keyword in q_lower for keyword in ["produk tidak laris", "produk ga laris", "produk sepi", "produk kurang laku", "butuh promo"]):
+            import re
+            bulan_match = re.search(r'(bulan|bulan ke|bln)\s*(\d+)', question)
+            tahun_match = re.search(r'20\d{2}', question)
+
+            if bulan_match:
+                bulan = int(bulan_match.group(2))
+                tahun = int(tahun_match.group()) if tahun_match else df_master["tanggal_pesanan"].dt.year.max()  # type: ignore
+
+                result = engine.produk_tidak_laris(bulan, tahun, bottom_n=10)
+                if not result.empty:
+                    response = f"**Produk Kurang Laku {get_bulan_name(bulan)} {tahun}:**\n\n"
+                    for i, (_, row) in enumerate(result.iterrows()):
+                        response += f"{i+1}. **{row['product_name']}** ({row['product_variation']})\n"
+                        response += f"   • Terjual: {row['qty']:,} items (rendah)\n"
+                        response += f"   • Revenue: {row['revenue_fmt']}\n"
+                        response += f"   • Butuh strategi promo untuk boost penjualan\n\n"
+                    return response
+
+        # Customer Analytics
+        if any(keyword in q_lower for keyword in ["customer", "pelanggan", "top customer", "customer terbaik"]):
+            import re
+            bulan_match = re.search(r'(bulan|bulan ke|bln)\s*(\d+)', question)
+            tahun_match = re.search(r'20\d{2}', question)
+
+            if bulan_match:
+                bulan = int(bulan_match.group(2))
+                tahun = int(tahun_match.group()) if tahun_match else df_master["tanggal_pesanan"].dt.year.max()  # type: ignore
+
+                result = engine.top_customers_bulan(bulan, tahun, top_n=10)
+                if not result.empty:
+                    response = f"**Top Customers {get_bulan_name(bulan)} {tahun}:**\n\n"
+                    for i, (_, row) in enumerate(result.iterrows()):
+                        response += f"{i+1}. **{row['customer_username']}**\n"
+                        response += f"   • Total spent: {row['total_spent_fmt']}\n"
+                        response += f"   • Orders: {row['total_orders']:,}\n"
+                        response += f"   • Items: {row['total_items']:,}\n\n"
+                    return response
+
+        # Geographic Performance
+        if any(keyword in q_lower for keyword in ["provinsi", "daerah", "kota", "wilayah", "area"]):
+            if "provinsi" in q_lower:
+                result = engine.performance_per_provinsi()
+                if not result.empty:
+                    response = "**Performance per Provinsi:**\n\n"
+                    for i, (_, row) in enumerate(result.iterrows()):
+                        response += f"{i+1}. **{row['province']}**\n"
+                        response += f"   • Revenue: {row['revenue_fmt']}\n"
+                        response += f"   • Orders: {row['orders']:,}\n"
+                        response += f"   • Customers: {row['customers']:,}\n\n"
+                    return response
+
+            if "kota" in q_lower:
+                result = engine.performance_per_kota(top_n=15)
+                if not result.empty:
+                    response = "**Top 15 Kota berdasarkan Revenue:**\n\n"
+                    for i, (_, row) in enumerate(result.iterrows()):
+                        response += f"{i+1}. **{row['city']}**, {row['province']}\n"
+                        response += f"   • Revenue: {row['revenue_fmt']}\n"
+                        response += f"   • Orders: {row['orders']:,}\n\n"
+                    return response
+
+        # Customer Retention
+        if any(keyword in q_lower for keyword in ["retensi", "retention", "balik lagi", "repeat", "kembali"]):
+            stats = engine.customer_retention()
+            return (
+                "**Statistik Customer Retention:**\n\n"
+                f"• Total Customers: {stats['total_customers']:,}\n"
+                f"• Repeat Buyers: {stats['repeat_buyers']:,}\n"
+                f"• One-time Buyers: {stats['one_time_buyers']:,}\n"
+                f"• Repeat Rate: {stats['repeat_rate']}%\n\n"
+                f"**Insight:** Dari {stats['total_customers']:,} customer, {stats['repeat_buyers']:,} "
+                f"({stats['repeat_rate']}%) sudah belanja lagi. Ini menunjukkan loyalitas customer yang "
+                f"{'sangat baik' if stats['repeat_rate'] > 30 else 'perlu ditingkatkan' if stats['repeat_rate'] > 15 else 'perlu perhatian serius'}."
+            )
+
+        # Payment Method Performance
+        if any(keyword in q_lower for keyword in ["metode pembayaran", "payment", "cod", "transfer", "shopeepay"]):
+            result = engine.performance_per_payment_method()
+            if not result.empty:
+                response = "**Performance per Metode Pembayaran:**\n\n"
+                for i, (_, row) in enumerate(result.iterrows()):
+                    response += f"{i+1}. **{row['payment_method']}**\n"
+                    response += f"   • Orders: {row['orders']:,}\n"
+                    response += f"   • Revenue: {row['revenue_fmt']}\n"
+                    response += f"   • AOV: {row['aov_fmt']}\n\n"
+                return response
+
+        # Best Jam & Hari
+        if any(keyword in q_lower for keyword in ["jam", "prime time", "paling ramai", "peak hour"]):
+            result = engine.best_jam_penjualan()
+            if not result.empty:
+                response = "**Jam Paling Ramai Order:**\n\n"
+                for i, row in result.head(5).iterrows():
+                    response += f"• Jam {row['jam']:02d}:00 - {row['orders']:,} orders ({row['revenue_fmt']})\n"
+                response += "\n**Insight:** Fokuskan promo & flash sale di jam-jam ramai ini untuk maksimalkan konversi."
+                return response
+
+        if any(keyword in q_lower for keyword in ["hari", "weekday", "weekend"]):
+            result = engine.best_hari_penjualan()
+            if not result.empty:
+                response = "**Performance per Hari:**\n\n"
+                for i, (_, row) in enumerate(result.iterrows()):
+                    response += f"• {row['hari']}: {row['orders']:,} orders ({row['revenue_fmt']})\n"
+
+                max_day = result.loc[result['orders'].idxmax()]['hari']
+                response += f"\n**Insight:** Hari **{max_day}** adalah hari paling ramai. Pertimbangkan untuk schedule promo di hari ini."
+                return response
+
+        # Monthly Summary
+        if any(keyword in q_lower for keyword in ["summary", "ringkasan", "performa bulan", "gimana bulan"]):
+            import re
+            bulan_match = re.search(r'(bulan|bulan ke|bln)\s*(\d+)', question)
+            tahun_match = re.search(r'20\d{2}', question)
+
+            if bulan_match:
+                bulan = int(bulan_match.group(2))
+                tahun = int(tahun_match.group()) if tahun_match else df_master["tanggal_pesanan"].dt.year.max()  # type: ignore
+
+                summary = engine.monthly_summary(bulan, tahun)
+                return (
+                    f"**Ringkasan Performa {get_bulan_name(bulan)} {tahun}:**\n\n"
+                    f"• Total Revenue: {summary['total_revenue_fmt']}\n"
+                    f"• Total Orders: {summary['total_orders']:,}\n"
+                    f"• Total Customers: {summary['total_customers']:,}\n"
+                    f"• Total Items Sold: {summary['total_qty']:,}\n"
+                    f"• Average Order Value (AOV): {summary['aov_fmt']}\n\n"
+                    f"• **Top Product:** {summary['top_product']}\n"
+                    f"• **Top City:** {summary['top_city']}\n\n"
+                    f"**Payment Distribution:**\n"
+                + "\n".join([f"   • {method}: {count} orders" for method, count in summary['payment_distribution'].items()])
+                )
+
+        # Jika tidak match dengan query manapun
+        return None
+
+    except Exception as e:
+        return f"Maaf, terjadi error saat menjawab pertanyaan: {str(e)}\n\nCoba tanya dengan cara yang berbeda atau lebih spesifik."
 
 # ═════════════════════════════════════════════════════════════════════
 # SESSION STATE
@@ -46,32 +348,43 @@ MODEL = "qwen2.5:3b"
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# Load data untuk analytics
+df_master = None
+if "etl_tables" in st.session_state and st.session_state["etl_tables"]:
+    try:
+        from core.data_manager import build_master
+        tables = st.session_state["etl_tables"]
+        df_master = build_master(tables)
+    except:
+        pass
+
 # ═════════════════════════════════════════════════════════════════════
 # SIDEBAR - SETTINGS
 # ═════════════════════════════════════════════════════════════════════
 
+# Settings panel - Hide by default untuk clean UI
 with st.sidebar:
-    st.markdown("### ⚙️ Settings")
+    with st.expander("⚙️ Settings", expanded=False):
+        temperature = st.slider("Temperature", 0.0, 1.0, 1.0, 0.1)  # Default ke MAX
+        max_tokens = st.slider("Max Tokens", 100, 2000, 2000, 100)  # Default ke MAX
 
-    temperature = st.slider("Temperature", 0.0, 1.0, 0.7, 0.1)
-    max_tokens = st.slider("Max Tokens", 100, 2000, 500, 100)
+        st.markdown("---")
+        st.markdown(f"**Model:** {MODEL}")
+        st.markdown(f"**Persona:** Senior Data Analyst")
+        st.markdown(f"**Mode:** MAX Performance 🚀")
 
-    st.markdown("---")
-    st.markdown(f"**Model:** {MODEL}")
-    st.markdown(f"**URL:** {OLLAMA_URL}")
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.messages = []
+            st.rerun()
 
-    if st.button("Clear Chat"):
-        st.session_state.messages = []
-        st.rerun()
-
-    st.markdown("---")
-    st.markdown("""
-    ### 📝 Tips
-    - Tanya apa saja dalam Bahasa Indonesia
-    - Untuk coding, tanya spesifik
-    - Temperature rendah = lebih fokus
-    - Temperature tinggi = lebih kreatif
-    """)
+        st.markdown("---")
+        st.markdown("""
+        ### 📝 Tips
+        - Tanya apa saja dalam Bahasa Indonesia
+        - Untuk coding, tanya spesifik
+        - Temperature MAX = paling kreatif & detail
+        - Max Tokens MAX = jawaban panjang lengkap
+        """)
 
 # ═════════════════════════════════════════════════════════════════════
 # MAIN CHAT AREA
@@ -83,29 +396,70 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # ═════════════════════════════════════════════════════════════════════
-# USER INPUT
+# USER INPUT & ML CONTEXT
 # ═════════════════════════════════════════════════════════════════════
 
-if prompt := st.chat_input("Tanya apa saja..."):
+ml_context = st.session_state.pop("ai_ml_context", None)
+user_input = st.chat_input("Tanya apa saja seputar data toko Anda...")
 
+# Build system info about available data
+data_overview = ""
+if df_master is not None and not df_master.empty:
+    min_date = df_master["tanggal_pesanan"].min()
+    max_date = df_master["tanggal_pesanan"].max()
+    total_orders = df_master["order_id"].nunique()
+    total_customers = df_master["customer_id"].nunique()
+    total_revenue = df_master[df_master["is_completed"] == 1]["valid_item_revenue"].sum()
+
+    data_overview = f"""
+**DATA YANG TERSEDIA:**
+• Periode: {min_date.strftime('%d %B %Y')} s.d. {max_date.strftime('%d %B %Y')}
+• Total Orders: {total_orders:,}
+• Total Customers: {total_customers:,}
+• Total Revenue: Rp {total_revenue:,.0f}
+
+Data ini SUDAH LENGKAP dan SIAP Dianalisis. Anda tidak perlu minta data tambahan - cukup tanya spesifik metrik/bulan/produk yang ingin dilihat.
+"""
+
+# Prioritaskan ML context, lalu cek apakah user input pertanyaan analytics
+prompt = ml_context or user_input
+
+# Jika ada user input, cek apakah pertanyaan analytics
+if user_input and not ml_context:
+    analytics_result = query_analytics(user_input, df_master)
+    if analytics_result:
+        # Jika berhasil query analytics, gunakan hasilnya saja (tanpa data overview total)
+        prompt = f"[JAWABAN ANALITICS SPESIFIK]\n{analytics_result}\n\n[PERTANYAAN USER]\n{user_input}\n\nBerdasarkan data spesifik di atas, tolong jelaskan dengan bahasa yang mudah dipahami dan berikan insight bisnis yang actionable. JANGAN tambahkan data lain di luar yang sudah disediakan."
+    else:
+        # Jika bukan pertanyaan analytics atau query gagal, baru inject data overview
+        if data_overview:
+            prompt = f"{data_overview}\n\n[PERTANYAAN USER]\n{user_input}"
+        else:
+            prompt = user_input
+
+if prompt:
     # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(user_input if user_input else "📊 Data Analytics Context")
+
+    # Prepare messages for Ollama API
+    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
 
     # Generate response
     with st.chat_message("assistant"):
-        with st.spinner("Berpikir..."):
+        with st.spinner("Menganalisis..."):
             try:
                 response = requests.post(
                     OLLAMA_URL,
                     json={
                         "model": MODEL,
-                        "prompt": prompt,
+                        "messages": api_messages,
                         "stream": False,
                         "options": {
                             "temperature": temperature,
                             "num_predict": max_tokens,
+                            "num_ctx": 8192,
                         }
                     },
                     timeout=120
@@ -113,7 +467,7 @@ if prompt := st.chat_input("Tanya apa saja..."):
                 response.raise_for_status()
                 result = response.json()
 
-                assistant_message = result.get("response", "Maaf, ada error.")
+                assistant_message = result.get("message", {}).get("content", "Maaf, ada error saat membaca response dari model.")
 
             except requests.exceptions.ConnectionError:
                 assistant_message = "❌ **Ollama tidak terkoneksi.** Pastikan Ollama service jalan: `brew services start ollama`"

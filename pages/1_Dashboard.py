@@ -74,7 +74,7 @@ if not tables:
         "Belum ada data",
         "Upload file Shopee di halaman <b>📥 Upload & ETL</b> terlebih dahulu (Klik kotak ini untuk mulai).",
         icon="📂",
-        link_url="/Home"
+        link_url="pages/0_Home.py"
     )
     st.stop()
 
@@ -142,8 +142,12 @@ with col_date:
 
 st.markdown(f'<div style="margin: {SPACING["md"]} 0;"></div>', unsafe_allow_html=True)
 
-# ── Apply Filters ────────────────────────────────────────────────
-df = df_master.copy()
+# ── TAB SYSTEM ────────────────────────────────────────────────────
+tab1, tab2 = st.tabs(["📊 Dashboard", "💡 Strategy"])
+
+with tab1:
+    # ── Apply Filters ────────────────────────────────────────────────
+    df = df_master.copy()
 
 if len(date_range) == 2:
     start, end = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
@@ -610,8 +614,8 @@ with tbl_col:
         hide_index=True,
     )
 
-# ── Footer ──────────────────────────────────────────────────────
-st.markdown(f"""
+    # ── Footer ──────────────────────────────────────────────────────
+    st.markdown(f"""
 <div style="
     margin-top: {SPACING['xl']};
     padding-top: {SPACING['lg']};
@@ -622,5 +626,120 @@ st.markdown(f"""
 ">
     DataBuddy Dashboard · Data dari {str(min_date.date()) if min_date is not pd.NaT else "-"} s.d. {str(max_date.date()) if max_date is not pd.NaT else "-"}
     · {len(df):,} baris dianalisis
+</div>
+""", unsafe_allow_html=True)
+
+with tab2:
+    # ── STRATEGY TAB (ML-Powered Recommendations) ───────────────
+    st.markdown(f"""
+<div style="margin-bottom: {SPACING['lg']};">
+    <h2 style="
+        font-size: 2rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #10b981, #3b82f6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin-bottom: 0.5rem;
+        line-height: 1.2;
+    ">💡 Saran Strategi Cerdas</h2>
+    <p style="color: #64748b; margin-top: 0.5rem; font-size: 1rem;">
+        Rekomendasi bisnis otomatis berbasis Machine Learning untuk meningkatkan omzet Anda.
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+    # Import ML Engine
+    from core.ml_engine import generate_rfm_segments, generate_bundling_rules
+
+    # Gunakan data yang sudah difilter
+    if df.empty:
+        st.warning("⚠️ Tidak ada data untuk dianalisis. Silakan pilih rentang tanggal yang berbeda.")
+    else:
+        # Filter hanya completed orders untuk ML analysis
+        df_ml = df[df["is_completed"] == 1].copy()
+
+        if df_ml.empty:
+            st.warning("⚠️ Tidak ada transaksi completed dalam rentang tanggal ini untuk analisis ML.")
+        else:
+            # Proses Machine Learning
+            with st.spinner("🤖 AI sedang menganalisis pola data Anda..."):
+                rfm_results = generate_rfm_segments(df_ml)
+                bundling_results = generate_bundling_rules(df_ml)
+
+            # Render Insight Cards
+            def render_strategy_card(title, icon, description, ai_context, button_key):
+                st.markdown(f"""
+<div style="
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+">
+    <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+        <div style="font-size: 2rem;">{icon}</div>
+        <h3 style="margin: 0; color: #0f172a; font-size: 1.25rem; font-weight: 700;">{title}</h3>
+    </div>
+    <div style="color: #475569; font-size: 0.95rem; line-height: 1.6; margin-bottom: 1rem;">
+        {description}
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+                col_btn, _ = st.columns([1, 4])
+                with col_btn:
+                    if st.button("💬 Diskusikan", key=button_key, use_container_width=True):
+                        st.session_state["ai_ml_context"] = f"Konteks Data ML ({title}):\n{ai_context}\n\nTolong berikan strategi spesifik berdasarkan data di atas."
+                        st.switch_page("pages/3_Chatbox.py")
+
+            # Layout 2 kolom
+            strat_col1, strat_col2 = st.columns(2)
+
+            with strat_col1:
+                st.markdown("### 👥 Segmentasi Pelanggan")
+                if "error" in rfm_results:
+                    st.info(rfm_results["error"])
+                else:
+                    desc = rfm_results["summary_text"].replace("\n", "<br>")
+                    render_strategy_card(
+                        title="Peta Kesetiaan Pelanggan",
+                        icon="🎯",
+                        description=f"<div>{desc}</div>",
+                        ai_context=rfm_results["summary_text"],
+                        button_key="btn_rfm"
+                    )
+
+            with strat_col2:
+                st.markdown("### 📦 Peluang Bundling")
+                if "error" in bundling_results:
+                    st.info(bundling_results["error"])
+                else:
+                    desc = bundling_results["summary_text"].replace("\n", "<br>")
+                    render_strategy_card(
+                        title="Rekomendasi Paket Diskon",
+                        icon="🛍️",
+                        description=f"<div>{desc}</div>",
+                        ai_context=bundling_results["summary_text"],
+                        button_key="btn_bundling"
+                    )
+
+            # Info box di bawah
+            st.markdown(f"""
+<div style="
+    background: #f0f9ff;
+    border-left: 4px solid #0ea5e9;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-top: 2rem;
+">
+    <div style="color: #0284c7; font-weight: 600; font-size: 0.9rem; margin-bottom: 0.5rem;">
+        💡 Tips Penggunaan
+    </div>
+    <div style="color: #475569; font-size: 0.85rem; line-height: 1.6;">
+        Klik tombol <strong>💬 Diskusikan</strong> untuk berdiskusi dengan AI Konsultan Data tentang insight di atas.
+        AI akan menggunakan konteks data ini untuk memberikan strategi bisnis yang spesifik dan actionable untuk toko Anda.
+    </div>
 </div>
 """, unsafe_allow_html=True)

@@ -197,19 +197,15 @@ def render_navbar():
         """, unsafe_allow_html=True)
 
         # Navigation links
-        st.page_link("pages/0_Home.py", label="Home (Upload)", icon="🏠")
+        st.page_link("pages/0_Home.py", label="Upload & ETL", icon="📥")
         st.page_link("pages/1_Dashboard.py", label="Dashboard", icon="📊")
-        st.page_link("pages/3_Chatbox.py", label="Chatbox", icon="💬")
+        st.page_link("pages/3_Chatbox.py", label="AI Chatbox", icon="💬")
 
-        st.markdown("<br><br>", unsafe_allow_html=True)
-        st.page_link("app.py", label="Keluar (Landing Page)", icon="🚪")
+        st.markdown("<br>", unsafe_allow_html=True)
 
-        # Footer di sidebar
-        st.markdown(f"""
-        <div style="position: fixed; bottom: 1rem; font-size: 0.65rem; opacity: 0.4; padding: 0 0.5rem;">
-            DataBuddy v2.0 • Phase 2
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("---", unsafe_allow_html=True)
+
+        st.page_link("app.py", label="← Landing Page", icon="🏠")
 
 
 def card(content: str, bg_color: str | None = None, border_color: str | None = None, padding: str | None = None):
