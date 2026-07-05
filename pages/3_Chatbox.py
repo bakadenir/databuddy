@@ -35,6 +35,42 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+st.markdown("""
+<style>
+/* CSS untuk meratakan chat user ke kanan seperti WhatsApp/iMessage */
+div[data-testid="stChatMessage"] {
+    background-color: transparent;
+}
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) {
+    flex-direction: row-reverse;
+    text-align: right;
+}
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) > div:nth-child(2) {
+    padding-right: 1.5rem;
+    padding-left: 0;
+}
+/* User Bubble style */
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-user"]) [data-testid="stMarkdownContainer"] p {
+    background-color: #e0f2fe;
+    padding: 12px 18px;
+    border-radius: 18px 18px 0 18px;
+    display: inline-block;
+    color: #0f172a;
+    margin: 0;
+}
+/* Assistant Bubble style */
+div[data-testid="stChatMessage"]:has([data-testid="chatAvatarIcon-assistant"]) [data-testid="stMarkdownContainer"] p {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    padding: 12px 18px;
+    border-radius: 18px 18px 18px 0;
+    display: inline-block;
+    color: #0f172a;
+    margin: 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # ═════════════════════════════════════════════════════════════════════
 # CONFIG
 # ═════════════════════════════════════════════════════════════════════
@@ -432,13 +468,15 @@ if user_input and not ml_context:
             prompt = user_input
 
 if prompt:
-    # Add user message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    # Simpan hanya input bersih ke histori chat agar UI rapi dan token lebih hemat
+    clean_user_input = user_input if user_input else "📊 Data Analytics Context"
+    st.session_state.messages.append({"role": "user", "content": clean_user_input})
     with st.chat_message("user"):
-        st.markdown(user_input if user_input else "📊 Data Analytics Context")
+        st.markdown(clean_user_input)
 
-    # Prepare messages for Ollama API
-    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages
+    # Siapkan pesan untuk API: Ambil semua histori (bersih), lalu inject prompt sistem ke pesan TERAKHIR saja
+    api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages[:-1]
+    api_messages.append({"role": "user", "content": prompt})
 
     # Generate response
     with st.chat_message("assistant"):
