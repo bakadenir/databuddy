@@ -1,7 +1,5 @@
-# Caddyfile
-# Ganti 'namadomain.com' dengan nama domain asli yang Anda beli.
-# Caddy akan otomatis mengurus sertifikat SSL (HTTPS) dari Let's Encrypt!
-
-namadomain.com {
+# Caddyfile — Development Mode
+# Untuk production, ganti :80 dengan domain asli kamu
+:80 {
     reverse_proxy web:8501
 }

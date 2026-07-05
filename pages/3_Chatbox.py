@@ -40,36 +40,28 @@ st.markdown(f"""
 # ═════════════════════════════════════════════════════════════════════
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
-MODEL = "qwen2.5:3b"
+OLLAMA_MODEL = "qwen2.5:3b"
 
-SYSTEM_PROMPT = """Anda adalah seorang Senior Data Analyst dan Data Scientist ahli di DataBuddy, platform analitik e-commerce untuk seller Shopee Indonesia. Anda memiliki pengalaman lebih dari 10 tahun di bidang analisis ritel online, business intelligence, statistik, dan machine learning.
-Keahlian Anda mencakup:
-- Menganalisis metrik e-commerce seperti Revenue, Average Order Value (AOV), Conversion Rate, Churn Rate, dan Customer Lifetime Value (CLV).
-- Membaca dan memproses data penjualan dengan tingkat ketelitian tinggi, memastikan tidak ada bias atau kesalahan interpretasi.
-- Memberikan insight strategis yang actionable (bisa langsung diterapkan) untuk meningkatkan profitabilitas toko.
+# ZhipuAI / GLM
+ZHIPUAI_API_KEY = os.environ.get("ZHIPUAI_API_KEY", "")
+GLM_API_URL = "https://open.bigmodel.cn/api/paas/v4/chat/completions"
+GLM_MODEL = "glm-4-plus"
 
-**PENTING: KETERSEDIAAN DATA**
-- Semua data yang Anda butuh SUDAH TERSEDIA di backend AnalyticsEngine.
-- Tidak perlu minta data tambahan dari user. Data revenue, products, customers, geographic, payment, shipping SEMUA sudah ada.
-- Jika user bertanya tentang metrik apapun, data tersebut sudah dihitung dan tinggal Anda baca dari query analytics yang tersedia.
-- AOV, Conversion Rate, Churn Rate, dan metrik lainnya sudah dihitung di backend. Tinggal tanya spesifik bulan/periode yang user inginkan.
+# Auto-detect: pake GLM kalau ada API key
+USE_GLM = bool(ZHIPUAI_API_KEY)
+MODEL = GLM_MODEL if USE_GLM else OLLAMA_MODEL
 
-**CARA MENJAWAB:**
-1. Untuk pertanyaan analytics, langsung berikan data spesifik yang user minta dengan angka yang tepat.
-2. Jelaskan data dalam bahasa Indonesia yang mudah dipahami.
-3. Berikan insight bisnis yang actionable dari data tersebut.
-4. Jangan minta data tambahan yang jelas-jelas sudah tersedia di backend.
+SYSTEM_PROMPT = """Anda Senior Data Analyst di DataBuddy (platform analitik Shopee Indonesia).
+Bahasa Indonesia, jawab singkat-padat-actionable, poin-poin.
 
-Saat menjawab pertanyaan pengguna (seller Shopee):
-1. Gunakan Bahasa Indonesia yang profesional, ramah, dan mudah dipahami oleh orang awam (hindari jargon teknis yang rumit tanpa penjelasan).
-2. Selalu kaitkan angka atau data dengan konteks bisnis (misal: "AOV Anda turun, ini berarti pembeli cenderung membeli barang yang lebih murah. Anda bisa membuat bundle diskon").
-3. Bersikap objektif, logis, dan berbasis data (data-driven). Jika data tidak cukup untuk mengambil kesimpulan, sampaikan dengan jujur.
-4. Susun jawaban dengan rapi menggunakan poin-poin (bullet points) agar mudah dibaca.
-5. Prioritaskan keamanan dan kerahasiaan; bantu seller membaca data mereka dengan aman dan berikan saran terbaik untuk pertumbuhan toko.
-6. ATURAN SANGAT KETAT (PENGHEMATAN TOKEN): Anda HANYA BOLEH menjawab pertanyaan yang berhubungan dengan analisis data, e-commerce, bisnis, penjualan, metrik Shopee, identitas Anda sendiri, atau fitur aplikasi DataBuddy. Jika pengguna bertanya tentang topik di luar konteks ini (misalnya sejarah, politik, cuaca, hiburan, dll), Anda WAJIB menolak dengan sopan dan menawarkan topik yang bisa Anda bahas. Gunakan template seperti ini: "Maaf, sebagai Konsultan Data Anda, saya tidak dapat membahas topik tersebut. Namun, saya sangat ahli dan siap membantu Anda menganalisis tren penjualan, mengevaluasi metrik toko seperti AOV dan Conversion Rate, atau merancang strategi promosi yang profitable. Ada metrik data yang ingin kita bahas hari ini?" Jangan berikan penjelasan tentang topik di luar konteks tersebut.
-   7. PENGECUALIAN ATURAN IDENTITAS:
-      - Jika pengguna bertanya tentang identitas Anda (misal: "kamu siapa?", "siapa namamu?"), perkenalkan diri Anda sebagai "Senior Data Analyst dan Konsultan Bisnis AI di platform DataBuddy".
-      - Jika pengguna bertanya tentang siapa pembuat/creator/penemu dari aplikasi DataBuddy, Anda WAJIB menjawab dengan bangga menggunakan informasi berikut: "Aplikasi DataBuddy ini diciptakan oleh **Deni Romadhon**, seorang mahasiswa cerdas yang saat ini sedang menempuh pendidikan Semester 4 di jurusan Ilmu Komputer, **Universitas Cakrawala**. Deni membangun platform ini dengan tujuan mulia untuk membantu para UMKM dan seller Shopee di Indonesia agar bisa bersaing di era digital, dengan cara mempermudah mereka dalam memahami dan mengubah data penjualan menjadi strategi bisnis yang menguntungkan." Anda boleh mengembangkan gaya bahasanya agar terdengar natural namun poin-poin utama tersebut harus tersampaikan.
+**Data SUDAH tersedia** — revenue, produk, pelanggan, lokasi, payment. Jangan minta data tambahan.
+
+Aturan:
+1. Jawab data-driven, bahasa awam
+2. Beri insight bisnis actionable
+3. Jika di luar topik (politik/sejarah/dll), tolak sopan
+4. Siapa kamu? "Senior Data Analyst & Konsultan Bisnis AI di DataBuddy"
+5. Siapa pembuat DataBuddy? "**Deni Romadhon**, S4 Ilmu Komputer, Universitas Cakrawala"
 """
 
 # ═════════════════════════════════════════════════════════════════════
@@ -365,14 +357,16 @@ if "etl_tables" in st.session_state and st.session_state["etl_tables"]:
 # Settings panel - Hide by default untuk clean UI
 with st.sidebar:
     with st.expander("⚙️ Settings", expanded=False):
-        temperature = st.slider("Temperature", 0.0, 1.0, 1.0, 0.1)  # Default ke MAX
-        max_tokens = st.slider("Max Tokens", 100, 2000, 2000, 100)  # Default ke MAX
+        provider = "🧠 GLM (cloud)" if USE_GLM else "🦙 Ollama (lokal)"
+        st.markdown(f"**Provider:** {provider}")
+        st.markdown(f"**Model:** {MODEL}")
+        if not USE_GLM:
+            st.markdown(f"🧠 **Context:** 4K (optimasi)")
+        st.markdown(f"🎯 **Max Response:** 1.536 tokens")
+        st.markdown(f"🌡️ **Temperature:** 0.7")
 
         st.markdown("---")
-        st.markdown(f"**Model:** {MODEL}")
-        st.markdown(f"**Persona:** Senior Data Analyst")
-        st.markdown(f"**Mode:** MAX Performance 🚀")
-
+        
         if st.button("🗑️ Clear Chat"):
             st.session_state.messages = []
             st.rerun()
@@ -380,10 +374,10 @@ with st.sidebar:
         st.markdown("---")
         st.markdown("""
         ### 📝 Tips
-        - Tanya apa saja dalam Bahasa Indonesia
-        - Untuk coding, tanya spesifik
-        - Temperature MAX = paling kreatif & detail
-        - Max Tokens MAX = jawaban panjang lengkap
+        - Tanya spesifik seputar data toko
+        - Contoh: "berapa revenue bulan Juni?"
+        - "produk apa yang paling laku?"
+        - Chat history tersimpan selama session
         """)
 
 # ═════════════════════════════════════════════════════════════════════
@@ -448,29 +442,53 @@ if prompt:
 
     # Generate response
     with st.chat_message("assistant"):
-        with st.spinner("Menganalisis..."):
+        with st.spinner(f"{'🧠 GLM' if USE_GLM else '🦙 Ollama'} Menganalisis..."):
             try:
-                response = requests.post(
-                    OLLAMA_URL,
-                    json={
-                        "model": MODEL,
-                        "messages": api_messages,
-                        "stream": False,
-                        "options": {
-                            "temperature": temperature,
-                            "num_predict": max_tokens,
-                            "num_ctx": 8192,
-                        }
-                    },
-                    timeout=120
-                )
-                response.raise_for_status()
-                result = response.json()
-
-                assistant_message = result.get("message", {}).get("content", "Maaf, ada error saat membaca response dari model.")
+                if USE_GLM:
+                    # ── GLM (ZhipuAI) ────────────────────────────────
+                    response = requests.post(
+                        GLM_API_URL,
+                        headers={
+                            "Authorization": f"Bearer {ZHIPUAI_API_KEY}",
+                            "Content-Type": "application/json",
+                        },
+                        json={
+                            "model": GLM_MODEL,
+                            "messages": api_messages,
+                            "stream": False,
+                            "max_tokens": 1536,
+                            "temperature": 0.7,
+                        },
+                        timeout=60
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    assistant_message = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                else:
+                    # ── Ollama (lokal) ────────────────────────────────
+                    response = requests.post(
+                        OLLAMA_URL,
+                        json={
+                            "model": OLLAMA_MODEL,
+                            "messages": api_messages,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.7,
+                                "num_predict": 1536,
+                                "num_ctx": 4096,
+                            }
+                        },
+                        timeout=300
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+                    assistant_message = result.get("message", {}).get("content", "Maaf, ada error saat membaca response dari model.")
 
             except requests.exceptions.ConnectionError:
-                assistant_message = "❌ **Ollama tidak terkoneksi.** Pastikan Ollama service jalan: `brew services start ollama`"
+                if USE_GLM:
+                    assistant_message = "❌ **GLM API tidak terkoneksi.** Cek koneksi internet VPS."
+                else:
+                    assistant_message = "❌ **Ollama tidak terkoneksi.** Pastikan Ollama service jalan."
 
             except Exception as e:
                 assistant_message = f"❌ **Error:** {e}"
