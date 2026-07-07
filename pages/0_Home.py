@@ -8,8 +8,8 @@ import streamlit as st
 import pandas as pd
 import io
 from components.ui import (
-    render_navbar, section_header, card, info_box,
-    empty_state, COLORS, SPACING, BORDER_RADIUS
+    render_navbar, render_sidebar_footer, section_header, card, info_box,
+    COLORS, SPACING, BORDER_RADIUS
 )
 
 # ── Page Config ────────────────────────────────────────────────
@@ -449,3 +449,16 @@ else:
                             st.exception(e)
 
             st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# BACKGROUND PRELOAD — Auto-load Supabase di background (deferred)
+# ═════════════════════════════════════════════════════════════════════
+
+try:
+    from core.data_manager import prefetch_supabase
+    prefetch_supabase()
+except Exception:
+    pass
+
+render_sidebar_footer()

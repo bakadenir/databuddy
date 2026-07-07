@@ -32,7 +32,9 @@ REQUIRED_COLUMNS = [
 ]
 
 
-def _detect_header_row(file_bytes: bytes, engine: str) -> int:
+from typing import Literal
+
+def _detect_header_row(file_bytes: bytes, engine: Literal["openpyxl", "xlrd"]) -> int:
     """
     Deteksi otomatis baris mana yang merupakan header.
     Beberapa format export Shopee punya baris kosong/metadata di atas.
@@ -46,7 +48,7 @@ def _detect_header_row(file_bytes: bytes, engine: str) -> int:
                 header=skip,
                 nrows=3,
             )
-            cols = [str(c).strip() for c in df_test.columns]
+            cols = [c.strip() for c in df_test.columns]
             if "No. Pesanan" in cols:
                 return skip
         except Exception:
@@ -54,7 +56,7 @@ def _detect_header_row(file_bytes: bytes, engine: str) -> int:
     return 0  # fallback ke row pertama
 
 
-def _read_excel_robust(file_bytes: bytes, engine: str) -> pd.DataFrame:
+def _read_excel_robust(file_bytes: bytes, engine: Literal["openpyxl", "xlrd"]) -> pd.DataFrame:
     """
     Baca Excel dengan auto-detect header row.
     Handles Shopee export yang punya metadata di atas tabel data.
@@ -70,7 +72,7 @@ def _read_excel_robust(file_bytes: bytes, engine: str) -> pd.DataFrame:
     )
 
     # Bersihkan nama kolom (strip whitespace)
-    df.columns = [str(c).strip() for c in df.columns]
+    df.columns = [c.strip() for c in df.columns]
 
     # Buang baris yang seluruhnya NaN (sering ada di file Excel Shopee)
     df = df.dropna(how="all").reset_index(drop=True)
@@ -102,7 +104,7 @@ def load_file(file) -> tuple[pd.DataFrame, dict]:
             except UnicodeDecodeError:
                 file.seek(0)
                 df = pd.read_csv(file, encoding="latin-1", dtype=str)
-            df.columns = [str(c).strip() for c in df.columns]
+            df.columns = [c.strip() for c in df.columns]
             df = df.dropna(how="all").reset_index(drop=True)
             info["format"] = "CSV"
 
@@ -158,7 +160,7 @@ def load_from_path(file_path: str) -> pd.DataFrame:
             df = pd.read_csv(file_path, encoding="utf-8", dtype=str)
         except UnicodeDecodeError:
             df = pd.read_csv(file_path, encoding="latin-1", dtype=str)
-        df.columns = [str(c).strip() for c in df.columns]
+        df.columns = [c.strip() for c in df.columns]
 
     elif suffix == ".xlsx":
         with open(file_path, "rb") as f:

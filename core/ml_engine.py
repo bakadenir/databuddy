@@ -1,140 +1,332 @@
+"""
+core/ml_engine.py — Modul Khusus Pemrosesan Machine Learning
+Berisi logic tingkat lanjut untuk prediksi (forecasting), segmentasi (clustering), dan deteksi anomali pada data Shopee.
+"""
+
 import pandas as pd
 import numpy as np
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from typing import Dict, Any, List, Optional
+# Import library ML sesuai kebutuhan di masa depan, contoh:
+# from sklearn.cluster import KMeans
+from mlxtend.preprocessing import TransactionEncoder
 from mlxtend.frequent_patterns import apriori, association_rules
 
-def generate_rfm_segments(df: pd.DataFrame) -> dict:
+class MLEngine:
     """
-    Menghitung RFM (Recency, Frequency, Monetary) dan melakukan K-Means Clustering.
-    Mengembalikan dictionary berisi ringkasan cluster.
+    Mesin pemroses Machine Learning untuk DataBuddy.
+    Menangani tugas-tugas prediktif dan analitik lanjutan yang tidak bisa 
+    ditangani oleh query SQL biasa atau agregasi pandas sederhana.
     """
-    # Filter hanya order yang completed
-    completed = df[df["is_completed"] == 1].copy()
-    
-    if completed.empty:
-        return {"error": "Tidak ada data transaksi yang selesai untuk dianalisis."}
+    def __init__(self, df_master: pd.DataFrame):
+        """
+        Inisialisasi ML Engine dengan data master (dari AnalyticsEngine).
         
-    # Pastikan tipe data datetime
-    completed["order_created_at"] = pd.to_datetime(completed["order_created_at"], errors="coerce")
-    completed = completed.dropna(subset=["order_created_at"])
-    
-    # Hitung Recency, Frequency, Monetary per customer
-    max_date = completed["order_created_at"].max() + pd.Timedelta(days=1)
-    
-    rfm = completed.groupby("customer_id").agg(
-        Recency=("order_created_at", lambda x: (max_date - x.max()).days),
-        Frequency=("order_id", "nunique"),
-        Monetary=("valid_item_revenue", "sum")
-    ).reset_index()
-    
-    # Jika pelanggan terlalu sedikit, fallback
-    if len(rfm) < 3:
-        return {"error": "Data pelanggan terlalu sedikit untuk di-clustering."}
-        
-    # K-Means Clustering
-    scaler = StandardScaler()
-    rfm_scaled = scaler.fit_transform(rfm[["Recency", "Frequency", "Monetary"]])
-    
-    # Gunakan 3 cluster (Loyal, Sleeping, New/Regular)
-    kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-    rfm["Cluster"] = kmeans.fit_predict(rfm_scaled)
-    
-    # Penamaan Cluster Berdasarkan Logika Bisnis
-    # Kita hitung rata-rata tiap cluster untuk melabeli
-    cluster_stats = rfm.groupby("Cluster").agg(
-        R_mean=("Recency", "mean"),
-        F_mean=("Frequency", "mean"),
-        M_mean=("Monetary", "mean"),
-        Count=("customer_id", "count")
-    ).reset_index()
-    
-    # Urutkan berdasarkan Monetary dan Frequency
-    cluster_stats = cluster_stats.sort_values(by=["M_mean", "F_mean"], ascending=[False, False])
-    
-    labels = ["Loyal Customer", "Regular Customer", "Sleeping/At-Risk Customer"]
-    label_map = {}
-    for i, (_, row) in enumerate(cluster_stats.iterrows()):
-        label_map[row["Cluster"]] = labels[i]
-        
-    rfm["Segment"] = rfm["Cluster"].map(label_map)
-    
-    # Buat Summary untuk Prompt AI
-    summary_list = []
-    for segment in labels:
-        segment_data = rfm[rfm["Segment"] == segment]
-        if not segment_data.empty:
-            count = len(segment_data)
-            avg_r = int(segment_data["Recency"].mean())
-            avg_f = int(segment_data["Frequency"].mean())
-            avg_m = int(segment_data["Monetary"].mean())
-            summary_list.append(
-                f"- **{segment}**: {count} orang. Rata-rata transaksi {avg_f} kali, terakhir belanja rata-rata {avg_r} hari lalu, total kontribusi rata-rata Rp {avg_m:,} per orang."
-            )
-            
-    return {
-        "status": "success",
-        "raw_rfm": rfm,
-        "summary_text": "\n".join(summary_list)
-    }
+        Args:
+            df_master (pd.DataFrame): Dataframe gabungan (fakta + dimensi) yang siap pakai.
+        """
+        self.df = df_master.copy() if df_master is not None else pd.DataFrame()
 
-def generate_bundling_rules(df: pd.DataFrame, min_support=0.01, min_lift=1.2) -> dict:
-    """
-    Mencari aturan asosiasi (Market Basket Analysis) dengan algoritma Apriori.
-    """
-    completed = df[df["is_completed"] == 1].copy()
-    
-    if completed.empty:
-        return {"error": "Tidak ada data transaksi yang selesai."}
+    def market_basket_analysis(self, min_support: float = 0.01, min_confidence: float = 0.20) -> Dict[str, Any]:
+        """
+        Menjalankan Market Basket Analysis (Association Rule Mining) menggunakan Apriori.
+        Mencari kombinasi produk yang sering dibeli bersamaan untuk keperluan Bundling.
+        """
+        if self.df.empty:
+            return {"error": "Data kosong."}
+            
+        # 1. Filter hanya transaksi Selesai
+        df_valid = self.df[self.df["order_status"] == "Selesai"].copy()
+        if df_valid.empty:
+            return {"error": "Tidak ada data transaksi Selesai."}
+
+        # 2. Buat kolom product_item (HANYA Nama Produk, abaikan variasi untuk cross-selling bersih)
+        df_valid["product_item"] = df_valid["product_name"]
         
-    # Asumsikan nama kolom produk adalah 'product_name' (biasanya dari dim_product)
-    # Jika tidak ada, gunakan 'product_id' sebagai fallback
-    prod_col = "product_name" if "product_name" in completed.columns else "product_id"
-    
-    # Buat basket: 1 order_id memiliki produk apa saja
-    # Grupkan berdasarkan order_id dan product
-    basket = completed.groupby(["order_id", prod_col])["quantity"].sum().unstack().reset_index().fillna(0).set_index("order_id")
-    
-    # Konversi ke binary (1 jika dibeli, 0 jika tidak)
-    def encode_units(x):
-        if x <= 0: return 0
-        if x >= 1: return 1
-    basket_sets = basket.map(encode_units)
-    
-    if basket_sets.empty or basket_sets.shape[1] < 2:
-        return {"error": "Data keranjang belanja kurang variatif."}
-    
-    # Jalankan Apriori
-    try:
-        frequent_itemsets = apriori(basket_sets, min_support=min_support, use_colnames=True)
+        # 3. Buat Basket Transaction (List of items per order_id)
+        basket_series = df_valid.groupby("order_id")["product_item"].apply(lambda x: list(set(x)))
+        basket_df = basket_series.reset_index()
+        basket_df.columns = ["order_id", "items"]
+        
+        # Hanya gunakan order yang beli lebih dari 1 macam barang
+        basket_df["jumlah_item"] = basket_df["items"].apply(len)
+        multi_item_basket = basket_df[basket_df["jumlah_item"] >= 2].copy()
+        
+        total_transactions = len(basket_df)
+        analyzed_transactions = len(multi_item_basket)
+        
+        if analyzed_transactions == 0:
+            return {"error": "Tidak ada transaksi dengan lebih dari 1 item."}
+
+        # 4. One-Hot Encoding
+        transactions = multi_item_basket["items"].tolist()
+        te = TransactionEncoder()
+        te_array = te.fit(transactions).transform(transactions)
+        basket_encoded = pd.DataFrame(te_array, columns=te.columns_)
+
+        # 5. Apriori - Cari Frequent Itemsets
+        # Kita coba beberapa level support secara bertahap jika min_support gagal
+        support_levels = [min_support, 0.005, 0.003, 0.001]
+        frequent_itemsets = pd.DataFrame()
+        used_support = min_support
+        
+        for supp in support_levels:
+            try:
+                temp_itemsets = apriori(basket_encoded, min_support=supp, use_colnames=True)
+                if len(temp_itemsets) > 0:
+                    frequent_itemsets = temp_itemsets
+                    used_support = supp
+                    break
+            except Exception:
+                continue
+
         if frequent_itemsets.empty:
-            return {"error": "Tidak ada pola pembelian bersamaan yang kuat (coba turunkan min_support)."}
-            
-        rules = association_rules(frequent_itemsets, metric="lift", min_threshold=min_lift, num_itemsets=2)
-        
+            return {"error": "Tidak ditemukan frequent itemsets yang memenuhi kriteria support."}
+
+        # 6. Association Rules
+        try:
+            rules = association_rules(frequent_itemsets, metric="confidence", min_threshold=min_confidence)
+        except Exception:
+            rules = pd.DataFrame()
+
         if rules.empty:
-            return {"error": "Tidak ada rekomendasi bundling yang signifikan."}
-            
-        # Urutkan berdasarkan lift dan confidence tertinggi
-        rules = rules.sort_values(["lift", "confidence"], ascending=[False, False])
+            return {"error": "Tidak ada aturan asosiasi (rules) yang memenuhi batas confidence."}
+
+        # Filter Lift > 1 (Hanya yang benar-benar berhubungan kuat)
+        rules = rules[rules["lift"] > 1].copy()
+        if rules.empty:
+            return {"error": "Tidak ada aturan asosiasi dengan Lift > 1."}
+
+        # Sort dan Format output
+        rules = rules.sort_values(["lift", "confidence", "support"], ascending=False).reset_index(drop=True) # type: ignore
         
-        # Ambil Top 5 Aturan untuk AI
-        top_rules = rules.head(5)
+        rules["antecedents"] = rules["antecedents"].apply(lambda x: ", ".join(list(x)))
+        rules["consequents"] = rules["consequents"].apply(lambda x: ", ".join(list(x)))
         
-        summary_list = []
-        for idx, row in top_rules.iterrows():
-            antecedents = ", ".join(list(row['antecedents']))
-            consequents = ", ".join(list(row['consequents']))
-            confidence = round(row['confidence'] * 100, 1)
-            lift = round(row['lift'], 2)
-            summary_list.append(
-                f"- Jika orang membeli **{antecedents}**, kemungkinannya **{confidence}%** mereka juga akan membeli **{consequents}** (Kekuatan/Lift: {lift}x lipat lebih tinggi dari kebetulan)."
-            )
-            
+        # Ambil kolom yang diperlukan
+        rules_clean = rules[["antecedents", "consequents", "support", "confidence", "lift"]].copy()
+        
+        # Hitung metrics performa model
+        avg_confidence = rules_clean["confidence"].mean()
+        avg_lift = rules_clean["lift"].mean()
+        total_rules = len(rules_clean)
+        
         return {
-            "status": "success",
-            "raw_rules": rules,
-            "summary_text": "\n".join(summary_list)
+            "success": True,
+            "rules": rules_clean,
+            "metrics": {
+                "total_transactions": total_transactions,
+                "analyzed_transactions": analyzed_transactions,
+                "used_support": used_support,
+                "total_rules": total_rules,
+                "avg_confidence": avg_confidence,
+                "avg_lift": avg_lift
+            }
         }
-    except Exception as e:
-        return {"error": f"Gagal memproses Apriori: {str(e)}"}
+
+    def rfm_segmentation(self) -> pd.DataFrame:
+        """
+        Sistem Pakar (Rule-Based AI) untuk Segmentasi Pelanggan (Loyalty Tier).
+        Menggunakan Forward Chaining berdasarkan histori transaksi (Frekuensi & Nominal).
+        """
+        if self.df.empty:
+            return pd.DataFrame()
+            
+        print("[ML Engine] Menjalankan Expert System Segmentation...")
+        
+        # 1. Filter pesanan sukses
+        df_valid = self.df[self.df["is_completed"] == 1].copy()
+        if df_valid.empty:
+            return pd.DataFrame()
+            
+        # 2. Hapus duplikat invoice (order_id) untuk perhitungan frekuensi yang tepat
+        # Pakai customer_username jika ada, jika tidak pakai customer_id
+        cust_col = "customer_username" if "customer_username" in df_valid.columns else "customer_id"
+        
+        df_unique_orders = df_valid.drop_duplicates(subset=["order_id"]) # type: ignore
+        
+        # 3. Agregasi data per pelanggan
+        customer_stats = df_unique_orders.groupby(cust_col).agg(
+            Frekuensi_Order=("order_id", "count"),
+            Total_Belanja=("valid_item_revenue", "sum")
+        ).reset_index()
+        
+        # 4. Inference Engine (Forward Chaining Rules)
+        def inference_engine(row):
+            freq = row["Frekuensi_Order"]
+            monetary = row["Total_Belanja"]
+            
+            # Rule 1: Super VIP (Target B2B/Kafe - 1% dari Omzet 300Jt)
+            if freq >= 5 and monetary >= 3_000_000:
+                return pd.Series([
+                    "Super VIP",
+                    "Prioritas Packing #1. VIP Direct Order WA khusus B2B/Grosir.",
+                    f"Sangat loyal ({freq}x) & value setara agen (Rp {monetary:,.0f})."
+                ])
+            # Rule 2: Loyal (Konsumen Rutin)
+            elif freq >= 3 and monetary >= 500_000:
+                return pd.Series([
+                    "Loyal",
+                    "Prioritas Packing #2. Flyer ajakan Restock via WA.",
+                    f"Pecandu kopi rutin ({freq}x) (Rp {monetary:,.0f})."
+                ])
+            # Rule 3: Review Manual (Sultan Dadakan / Kafe Baru Coba-Coba)
+            elif freq == 1 and monetary >= 1_000_000:
+                return pd.Series([
+                    "Review Manual",
+                    "Follow up manual segera (Potensi kafe baru atau penipuan COD).",
+                    f"Baru 1x beli langsung borong (Rp {monetary:,.0f})."
+                ])
+            # Rule 4: Reguler
+            elif freq <= 2:
+                return pd.Series([
+                    "Reguler",
+                    "Proses antrean standar.",
+                    "Konsumen standar/baru."
+                ])
+            # Fallback
+            else:
+                return pd.Series([
+                    "Review Manual", 
+                    "Cek histori pesanan", 
+                    f"Tidak standar (Freq: {freq}x, Nominal: Rp {monetary:,.0f})"
+                ])
+                
+        # 5. Terapkan rules ke dataframe
+        customer_stats[["Tier_Loyalitas", "Rekomendasi_Tindakan", "Alasan"]] = customer_stats.apply(inference_engine, axis=1) # type: ignore
+        
+        # 6. Sort berdasarkan Total Belanja untuk kemudahan UI
+        customer_stats = customer_stats.sort_values("Total_Belanja", ascending=False).reset_index(drop=True)
+        
+        return customer_stats
+        
+    def forecast_sales(self, periods: int = 7) -> pd.DataFrame:
+        """
+        [Template] Prediksi Penjualan (Sales Forecasting).
+        Memprediksi omzet penjualan n periode ke depan.
+        
+        Args:
+            periods (int): Jumlah hari/bulan ke depan yang akan diprediksi.
+            
+        Returns:
+            pd.DataFrame: Dataframe berisi tanggal masa depan dan prediksi revenue.
+        """
+        if self.df.empty:
+            return pd.DataFrame()
+            
+        # TODO: Implementasi Time Series Forecasting (misal: ARIMA / Facebook Prophet / XGBoost)
+        print(f"[ML Engine] Memprediksi penjualan untuk {periods} periode ke depan...")
+        return pd.DataFrame()
+
+    def detect_anomalies(self) -> pd.DataFrame:
+        """
+        [Template] Deteksi Anomali.
+        Mencari data transaksi yang aneh/tidak wajar (fraud, typo harga ekstrim, dsb).
+        
+        Returns:
+            pd.DataFrame: Data transaksi yang terdeteksi sebagai anomali.
+        """
+        if self.df.empty:
+            return pd.DataFrame()
+            
+        # TODO: Implementasi Anomaly Detection (misal: Isolation Forest atau DBSCAN)
+        print("[ML Engine] Mendeteksi anomali transaksi...")
+        return pd.DataFrame()
+
+    def product_recommendation(self, customer_id: str) -> List[str]:
+        """
+        [Template] Rekomendasi Produk (Market Basket Analysis / Collaborative Filtering).
+        Memberikan rekomendasi produk apa yang cocok ditawarkan ke customer tertentu.
+        
+        Args:
+            customer_id (str): ID Pelanggan
+            
+        Returns:
+            List[str]: Daftar nama produk/SKU rekomendasi
+        """
+        if self.df.empty:
+            return []
+            
+        # TODO: Implementasi sistem rekomendasi
+        print(f"[ML Engine] Mengambil rekomendasi produk untuk customer: {customer_id}")
+        return []
+
+    def revenue_forecasting(self, forecast_days: int = 30) -> Dict:
+        """
+        Memprediksi omzet (revenue) harian untuk N hari ke depan menggunakan
+        Holt-Winters Exponential Smoothing.
+        """
+        if self.df.empty:
+            return {"error": "Data kosong."}
+            
+        # 1. Siapkan data harian (omzet dari transaksi Selesai)
+        df_valid = self.df[self.df["order_status"] == "Selesai"].copy()
+        if df_valid.empty:
+            return {"error": "Tidak ada data transaksi Selesai."}
+            
+        # Group by tanggal_pesanan (tanggal saja, tanpa jam)
+        df_valid["tanggal"] = pd.to_datetime(df_valid["order_created_at"])
+        df_valid["tanggal"] = df_valid["tanggal"].dt.floor("D") # type: ignore
+        daily_revenue = df_valid.groupby("tanggal")["valid_item_revenue"].sum().reset_index()
+        
+        # Urutkan berdasarkan waktu
+        daily_revenue = daily_revenue.sort_values("tanggal").set_index("tanggal")
+        
+        # Isi tanggal yang bolong dengan 0 (karena tidak ada penjualan hari itu)
+        all_days = pd.date_range(start=daily_revenue.index.min(), end=daily_revenue.index.max(), freq="D")
+        daily_revenue = daily_revenue.reindex(all_days, fill_value=0)
+        
+        if len(daily_revenue) < 14:
+            return {"error": "Data harian kurang dari 14 hari. Prediksi tidak dapat diandalkan."}
+            
+        try:
+            from statsmodels.tsa.holtwinters import ExponentialSmoothing
+            from sklearn.metrics import mean_absolute_percentage_error
+            
+            # Gunakan additive trend & seasonality (mingguan = 7 hari)
+            seasonal_periods = 7 if len(daily_revenue) >= 21 else None
+            trend_type = "add"
+            seasonal_type = "add" if seasonal_periods else None
+            
+            # 2. Fit Model
+            series = daily_revenue["valid_item_revenue"].astype(float)
+            model = ExponentialSmoothing(
+                series,
+                trend=trend_type,
+                seasonal=seasonal_type,
+                seasonal_periods=seasonal_periods,
+                initialization_method="estimated"
+            )
+            fit_model = model.fit()
+            
+            # 3. Evaluasi (Prediksi di masa lalu untuk menghitung error)
+            fitted_values = fit_model.fittedvalues
+            actual_safe = series.replace(0, 1)
+            mape = mean_absolute_percentage_error(actual_safe, fitted_values)
+            
+            # 4. Prediksi Masa Depan (Forecast)
+            forecast = fit_model.forecast(forecast_days)
+            forecast = forecast.apply(lambda x: max(0, x))
+            
+            history_df = series.reset_index()
+            history_df.columns = ["date", "revenue"]
+            history_df["type"] = "Actual"
+            
+            forecast_df = forecast.reset_index()
+            forecast_df.columns = ["date", "revenue"]
+            forecast_df["type"] = "Forecast"
+            
+            total_forecast = forecast.sum()
+            
+            return {
+                "history": history_df,
+                "forecast": forecast_df,
+                "metrics": {
+                    "mape_percent": round(mape * 100, 2),
+                    "total_forecast": float(total_forecast),
+                    "avg_daily_forecast": float(total_forecast / forecast_days),
+                    "days": forecast_days,
+                    "data_points": len(series)
+                }
+            }
+        except Exception as e:
+            return {"error": f"Gagal menjalankan model: {str(e)}"}

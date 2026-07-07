@@ -15,52 +15,106 @@ def get_tables() -> Optional[dict]:
     """Ambil tabel ETL dari Streamlit session state, atau dari Supabase jika belum ada."""
     import streamlit as st
     from core.config import config
-    
+
     tables = st.session_state.get("etl_tables", None)
     if tables and isinstance(tables, dict) and not tables.get("fact_order_item", pd.DataFrame()).empty:
         return tables
-        
+
     # Fetch dari Supabase jika dikonfigurasi
     if config.has_supabase:
         try:
             from core.database import get_supabase_client
             client = get_supabase_client()
-            
+
             with st.spinner("Mendownload data dari Supabase (ini mungkin memakan waktu sebentar)..."):
-                fetched_tables = {}
-                dims = [
-                    "dim_product", "dim_customer", "dim_location",
-                    "dim_date", "dim_payment", "dim_status", "dim_shipping"
-                ]
-                
-                for dim in dims:
-                    res = client.table(dim).select("*").execute()
-                    fetched_tables[dim] = pd.DataFrame(res.data) if res.data else pd.DataFrame()
-                    
-                # Paginated fetch untuk tabel fakta karena limit 1000 baris per request
-                fact_data = []
-                chunk_size = 1000
-                start = 0
-                while True:
-                    res = client.table("fact_order_item").select("*").range(start, start + chunk_size - 1).execute()
-                    if not res.data:
-                        break
-                    fact_data.extend(res.data)
-                    if len(res.data) < chunk_size:
-                        break
-                    start += chunk_size
-                    
-                fetched_tables["fact_order_item"] = pd.DataFrame(fact_data) if fact_data else pd.DataFrame()
-                
+                fetched_tables = fetch_all_supabase_tables(client)
+
                 # Simpan di session_state supaya tidak diload ulang setiap klik
                 if not fetched_tables["fact_order_item"].empty:
                     st.session_state["etl_tables"] = fetched_tables
                     return fetched_tables
-                    
+
         except Exception as e:
             st.error(f"Gagal mengambil data dari Supabase: {e}")
-            
+
     return None
+
+
+def fetch_all_supabase_tables(client) -> dict:
+    """Fetch semua tabel dari Supabase (reusable function)."""
+    fetched_tables = {}
+    tables_to_fetch = [
+        "dim_product", "dim_customer", "dim_location",
+        "dim_date", "dim_payment", "dim_status", "dim_shipping",
+        "fact_order_item"
+    ]
+
+    for table_name in tables_to_fetch:
+        data = []
+        chunk_size = 1000
+        start = 0
+        while True:
+            res = client.table(table_name).select("*").range(start, start + chunk_size - 1).execute()
+            if not res.data:
+                break
+            data.extend(res.data)
+            if len(res.data) < chunk_size:
+                break
+            start += chunk_size
+
+        fetched_tables[table_name] = pd.DataFrame(data) if data else pd.DataFrame()
+
+    return fetched_tables
+
+
+def prefetch_supabase() -> None:
+    """
+    Preload data dari Supabase ke session_state secara silent.
+    Menggunakan deferred execution: UI render dulu, baru load di background.
+
+    Cara kerja:
+    1. Panggil fungsi ini di atas script
+    2. Fungsi akan defer ke rerun berikutnya dengan st.session_state flag
+    3. UI sudah ter-render di rerun pertama
+    4. Data di-load di rerun kedua (silent, tanpa spinner)
+    """
+    import streamlit as st
+    from core.config import config
+
+    # Cek apakah sudah pernah prefetch (berhasil atau gagal)
+    if st.session_state.get("supabase_prefetch_done", False):
+        return
+
+    # Cek apakah data sudah ada dari ETL lokal
+    if st.session_state.get("etl_tables") is not None:
+        st.session_state["supabase_prefetch_done"] = True
+        return
+
+    # Tandai bahwa kita mau prefetch di rerun berikutnya
+    if not st.session_state.get("supabase_prefetch_scheduled", False):
+        st.session_state["supabase_prefetch_scheduled"] = True
+        # Trigger rerun - UI sudah ter-render sebelum ini dipanggil
+        st.rerun()
+        return
+
+    # Ini rerun kedua - lakukan fetch sebenarnya
+    st.session_state["supabase_prefetch_done"] = True
+
+    if not config.has_supabase:
+        return
+
+    try:
+        from core.database import get_supabase_client
+        client = get_supabase_client()
+
+        # Fetch silent tanpa spinner
+        fetched_tables = fetch_all_supabase_tables(client)
+
+        if not fetched_tables["fact_order_item"].empty:
+            st.session_state["etl_tables"] = fetched_tables
+    except Exception:
+        # Silent fail - tidak boleh break app
+        pass
 
 
 def build_master(tables: dict) -> pd.DataFrame:

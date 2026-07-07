@@ -164,6 +164,36 @@ def apply_custom_css():
             box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         }
 
+        /* Fix button colors inside sidebar (which has dark background) */
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button p,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button div,
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button span {
+            color: #1e293b !important;
+            background-color: #ffffff !important;
+            border-color: #cbd5e1 !important;
+        }
+        
+        section[data-testid="stSidebar"] div[data-testid="stButton"] button:hover {
+            background-color: #f8fafc !important;
+            border-color: #94a3b8 !important;
+        }
+
+        /* Fix Expander colors inside sidebar */
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] details,
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] details summary {
+            background-color: transparent !important;
+        }
+        
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] details summary:hover {
+            background-color: rgba(255, 255, 255, 0.05) !important;
+        }
+        
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] p,
+        section[data-testid="stSidebar"] div[data-testid="stExpander"] span {
+            color: #e2e8f0 !important;
+        }
+
         /* Dividers */
         hr {
             border-color: #e2e8f0 !important;
@@ -199,6 +229,7 @@ def render_navbar():
         # Navigation links
         st.page_link("pages/0_Home.py", label="Upload & ETL", icon="📥")
         st.page_link("pages/1_Dashboard.py", label="Dashboard", icon="📊")
+        st.page_link("pages/2_Strategi.py", label="Strategi", icon="🎯")
         st.page_link("pages/3_Chatbox.py", label="AI Chatbox", icon="💬")
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -206,6 +237,122 @@ def render_navbar():
         st.markdown("---", unsafe_allow_html=True)
 
         st.page_link("app.py", label="← Landing Page", icon="🏠")
+
+
+def render_sidebar_footer():
+    """Render footer sidebar (Reset Data dll) di posisi paling bawah."""
+    with st.sidebar:
+        st.markdown("<br><br><br>", unsafe_allow_html=True)
+        st.markdown("---", unsafe_allow_html=True)
+
+        # Cek koneksi Supabase
+        supabase_ok = False
+        row_count = 0
+
+        try:
+            from core.config import config
+            if config.has_supabase:
+                from core.database import get_supabase_client, get_supabase_table_count
+                client = get_supabase_client()
+
+                try:
+                    client.table("fact_order_item").select("*").limit(1).execute()
+                    supabase_ok = True
+                    row_count = get_supabase_table_count("fact_order_item")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Status indicator disembunyikan sesuai permintaan user
+
+        # Reset button
+        if not st.session_state.get("reset_confirmed", False):
+            # Mode normal: tombol reset
+            if st.button("🗑️ Reset Data", use_container_width=True, disabled=not supabase_ok, key="sidebar_reset"):
+                st.session_state["reset_confirmed"] = True
+                st.rerun()
+        else:
+            # Mode konfirmasi: warning + tombol OK + tombol Batal
+            st.error("""
+            **⚠️ Yakin hapus SEMUA data?**
+
+            Tidak bisa undo!
+            """)
+
+            col_ok, col_cancel = st.columns(2)
+
+            with col_ok:
+                if st.button("✅ OK, Hapus!", use_container_width=True, key="sidebar_confirm"):
+                    from core.database import reset_supabase_data
+
+                    with st.spinner("🔄 Menghapus data..."):
+                        result = reset_supabase_data()
+
+                    st.session_state["reset_confirmed"] = False
+
+                    if result.get("success"):
+                        st.success(f"✅ {result.get('message', 'Reset berhasil!')}")
+
+                        # Clear session state cache
+                        if "etl_tables" in st.session_state:
+                            del st.session_state["etl_tables"]
+                        if "supabase_prefetch_done" in st.session_state:
+                            del st.session_state["supabase_prefetch_done"]
+                        if "supabase_prefetch_scheduled" in st.session_state:
+                            del st.session_state["supabase_prefetch_scheduled"]
+
+                        st.info("✅ Data berhasil dihapus! Database sekarang kosong.")
+
+                        # Show details
+                        if result.get("details"):
+                            with st.expander("📋 Detail Reset", expanded=True):
+                                for detail in result.get("details", []):
+                                    st.write(f"✅ {detail}")
+
+                        st.balloons()
+
+                        # Tambah tombol ke halaman Upload & ETL
+                        if st.button("📥 Upload Data Baru", use_container_width=True, key="goto_etl"):
+                            st.switch_page("pages/0_Home.py")
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        st.error(f"❌ Gagal: {error_msg}")
+                        
+                        # Fallback error manual
+                        st.info("💡 **Solusi Cepat:**\nFungsi penghapus data belum disetup di Supabase.\n1. Buka **Supabase Dashboard → SQL Editor**\n2. Jalankan SQL ini:")
+                        st.code('''
+CREATE OR REPLACE FUNCTION reset_databuddy_tables()
+RETURNS TABLE(table_name text, rows_deleted bigint)
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    tbl RECORD;
+BEGIN
+    FOR tbl IN SELECT unnest(ARRAY['fact_order_item', 'dim_product', 'dim_customer',
+                                'dim_location', 'dim_date', 'dim_payment',
+                                'dim_status', 'dim_shipping']) AS table_name
+    LOOP
+        EXECUTE format('TRUNCATE TABLE %I CASCADE', tbl.table_name);
+        RETURN QUERY SELECT tbl.table_name::text, 0::bigint;
+    END LOOP;
+    RETURN;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION reset_databuddy_tables() TO authenticated;
+GRANT EXECUTE ON FUNCTION reset_databuddy_tables() TO anon;
+''', language="sql")
+                        st.markdown("3. Coba lagi tombol Reset!")
+
+                        if st.button("🔄 Coba Lagi", use_container_width=True, key="after_error"):
+                            st.rerun()
+
+            with col_cancel:
+                if st.button("❌ Batal", use_container_width=True, key="sidebar_cancel"):
+                    st.session_state["reset_confirmed"] = False
+                    st.rerun()
 
 
 def card(content: str, bg_color: str | None = None, border_color: str | None = None, padding: str | None = None):
@@ -289,6 +436,7 @@ __all__ = [
     "BORDER_RADIUS",
     "apply_custom_css",
     "render_navbar",
+    "render_sidebar_footer",
     "card",
     "section_header",
     "info_box",

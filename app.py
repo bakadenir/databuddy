@@ -473,3 +473,16 @@ st.markdown("""
     <p style="margin-top: 0.5rem; font-size: 0.75rem;">© 2026 DataBuddy. Dibuat dengan ❤️ untuk Seller Shopee Indonesia.</p>
 </div>
 """, unsafe_allow_html=True)
+
+
+# ═════════════════════════════════════════════════════════════════════
+# BACKGROUND PRELOAD — Auto-load Supabase di background (deferred execution)
+# ═════════════════════════════════════════════════════════════════════
+# Dipanggil di paling bawah setelah UI render, supaya rerun terjadi
+# setelah user melihat tampilan (async-like experience)
+
+try:
+    from core.data_manager import prefetch_supabase
+    prefetch_supabase()
+except Exception:
+    pass

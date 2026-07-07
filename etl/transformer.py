@@ -223,7 +223,7 @@ def build_dim_date(df: pd.DataFrame) -> pd.DataFrame:
     """
     unique_dates = (
         df[["Waktu Pesanan Dibuat"]]
-        .assign(date_id=df["Waktu Pesanan Dibuat"].dt.strftime("%Y%m%d").astype(int))
+        .assign(date_id=df["Waktu Pesanan Dibuat"].dt.strftime("%Y%m%d").astype(int)) # type: ignore
         .drop_duplicates(subset=["date_id"])   # ← deduplikasi per HARI
         .reset_index(drop=True)
     )
@@ -291,11 +291,11 @@ def build_fact_order_item(
     fact = df.copy()
 
     # date_id dari timestamp (untuk join ke dim_date)
-    fact["date_id"] = fact["Waktu Pesanan Dibuat"].dt.strftime("%Y%m%d").astype(int)
+    fact["date_id"] = fact["Waktu Pesanan Dibuat"].dt.strftime("%Y%m%d").astype(int) # type: ignore
     
     # Simpan waktu spesifik di fact table agar tidak hilang saat agregasi harian di dim_date
     fact["order_created_at"] = fact["Waktu Pesanan Dibuat"]
-    fact["jam"] = fact["Waktu Pesanan Dibuat"].dt.hour
+    fact["jam"] = fact["Waktu Pesanan Dibuat"].dt.hour # type: ignore
 
     # Join semua dimensi
     fact = fact.merge(
@@ -329,7 +329,7 @@ def build_fact_order_item(
 
     # Debug: print sample nilai untuk validasi
     sample = fact[["Harga Awal", "Harga Setelah Diskon"]].head(3)
-    print(f"[DEBUG] Sample harga setelah parse: {sample.to_dict('records')}")
+    print(f"[DEBUG] Sample harga setelah parse: {sample.to_dict('records')}") # type: ignore
 
     # Kalkulasi metrik & flags
     fact["valid_item_revenue"] = (fact["Jumlah"] * fact["Harga Setelah Diskon"]).astype(int)

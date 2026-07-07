@@ -13,6 +13,22 @@ from typing import Optional, Any
 from core.config import config
 
 
+def _fetch_all(client, table: str, cols: str = "*") -> list:
+    """Fetch all rows from a Supabase table with pagination to bypass the 1000 row limit."""
+    data = []
+    chunk_size = 1000
+    start = 0
+    while True:
+        res = client.table(table).select(cols).range(start, start + chunk_size - 1).execute()
+        if not res.data:
+            break
+        data.extend(res.data)
+        if len(res.data) < chunk_size:
+            break
+        start += chunk_size
+    return data
+
+
 def get_existing_products() -> Optional[pd.DataFrame]:
     """
     Ambil semua produk dari dim_product Supabase.
@@ -27,9 +43,9 @@ def get_existing_products() -> Optional[pd.DataFrame]:
     try:
         from core.database import get_supabase_client
         client = get_supabase_client()
-        response = client.table("dim_product").select("*").execute()
-        if response.data:
-            df = pd.DataFrame(response.data)
+        data = _fetch_all(client, "dim_product")
+        if data:
+            df = pd.DataFrame(data)
             print(f"[OK] Buku Induk Produk: {len(df)} SKU dimuat dari Supabase.")
             return df
         print("[INFO] dim_product di Supabase masih kosong.")
@@ -69,11 +85,14 @@ def _upsert_dimension(
 
     try:
         # on_conflict="ignore" → skip jika conflict_col sudah ada
-        client.table(table_name).upsert(
-            records,
-            on_conflict=conflict_col,
-            ignore_duplicates=True,
-        ).execute()
+        CHUNK = 500
+        for i in range(0, len(records), CHUNK):
+            chunk_records = records[i:i + CHUNK]
+            client.table(table_name).upsert(
+                chunk_records,
+                on_conflict=conflict_col,
+                ignore_duplicates=True,
+            ).execute()
         print(f"[OK] {table_name}: {len(records)} records upserted (skip duplikat ✓)")
         result["success"] = True
     except Exception as e:
@@ -95,8 +114,8 @@ def _insert_fact(client, df: pd.DataFrame) -> dict:
 
     try:
         # 1. Ambil order_id yang sudah ada
-        existing = client.table("fact_order_item").select("order_id").execute()
-        existing_ids = {r["order_id"] for r in existing.data} if existing.data else set()
+        data = _fetch_all(client, "fact_order_item", "order_id")
+        existing_ids = {r["order_id"] for r in data} if data else set()
 
         # 2. Filter hanya order baru
         df_new = df[~df["order_id"].isin(existing_ids)].copy()
@@ -232,8 +251,8 @@ def _resolve_fk_from_supabase(client, tables: dict) -> dict:
 
     # Fetch ID dari Supabase
     def fetch(table, cols):
-        r = client.table(table).select(",".join(cols)).execute()
-        return pd.DataFrame(r.data) if r.data else pd.DataFrame(columns=cols)
+        data = _fetch_all(client, table, ",".join(cols))
+        return pd.DataFrame(data) if data else pd.DataFrame(columns=cols)
 
     sb_product  = fetch("dim_product",  ["product_id",  "sku"])
     sb_customer = fetch("dim_customer", ["customer_id", "customer_username"])
@@ -306,11 +325,12 @@ def _manual_upsert_location(client, df: pd.DataFrame) -> dict:
     result: dict[str, Any] = {"table": "dim_location", "attempted": len(df), "error": None, "success": False}
 
     try:
-        # Ambil existing data untuk comparison
-        existing = client.table("dim_location").select("*").execute()
-        if existing.data:
-            existing_df = pd.DataFrame(existing.data)
-            # Filter hanya yang belum ada
+        # Cek apakah sudah ada (karena on_conflict composite key belum tentu jalan mulus)
+        existing_data = _fetch_all(client, "dim_location")
+        existing_df = pd.DataFrame(existing_data) if existing_data else pd.DataFrame()
+        
+        # Filter hanya yang belum ada
+        if not existing_df.empty:
             merged = df.merge(
                 existing_df[["city", "province"]],
                 on=["city", "province"],
@@ -322,9 +342,10 @@ def _manual_upsert_location(client, df: pd.DataFrame) -> dict:
             new_data = df[["city", "province"]].drop_duplicates()
 
         if not new_data.empty:
-            client.table("dim_location").insert(
-                new_data.to_dict(orient="records")  # type: ignore
-            ).execute()
+            records = new_data.to_dict(orient="records")  # type: ignore
+            CHUNK = 500
+            for i in range(0, len(records), CHUNK):
+                client.table("dim_location").insert(records[i:i + CHUNK]).execute()
 
         result["success"] = True
         print(f"[OK] dim_location: {len(df)} processed, {len(new_data) if not new_data.empty else 0} new inserts")
@@ -340,11 +361,12 @@ def _manual_upsert_shipping(client, df: pd.DataFrame) -> dict:
     result: dict[str, Any] = {"table": "dim_shipping", "attempted": len(df), "error": None, "success": False}
 
     try:
-        # Ambil existing data untuk comparison
-        existing = client.table("dim_shipping").select("*").execute()
-        if existing.data:
-            existing_df = pd.DataFrame(existing.data)
-            # Filter hanya yang belum ada
+        # Cek existing
+        existing_data = _fetch_all(client, "dim_shipping")
+        existing_df = pd.DataFrame(existing_data) if existing_data else pd.DataFrame()
+        
+        # Filter hanya yang belum ada
+        if not existing_df.empty:
             merged = df.merge(
                 existing_df[["service_type"]],
                 on="service_type",
@@ -356,9 +378,10 @@ def _manual_upsert_shipping(client, df: pd.DataFrame) -> dict:
             new_data = df[["courier_name", "service_type"]].drop_duplicates()
 
         if not new_data.empty:
-            client.table("dim_shipping").insert(
-                new_data.to_dict(orient="records")  # type: ignore
-            ).execute()
+            records = new_data.to_dict(orient="records")  # type: ignore
+            CHUNK = 500
+            for i in range(0, len(records), CHUNK):
+                client.table("dim_shipping").insert(records[i:i + CHUNK]).execute()
 
         result["success"] = True
         print(f"[OK] dim_shipping: {len(df)} processed, {len(new_data) if not new_data.empty else 0} new inserts")

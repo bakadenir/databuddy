@@ -31,12 +31,12 @@ class AnalyticsEngine:
         self.df_completed = self.df[self.df["is_completed"] == 1].copy()
 
         # Extract date components
-        self.df["tahun"] = self.df["tanggal_pesanan"].dt.year
-        self.df["bulan"] = self.df["tanggal_pesanan"].dt.month
-        self.df["bulan_nama"] = self.df["tanggal_pesanan"].dt.strftime("%B")
-        self.df_completed["tahun"] = self.df_completed["tanggal_pesanan"].dt.year
-        self.df_completed["bulan"] = self.df_completed["tanggal_pesanan"].dt.month
-        self.df_completed["bulan_nama"] = self.df_completed["tanggal_pesanan"].dt.strftime("%B")
+        self.df["tahun"] = self.df["tanggal_pesanan"].dt.year # type: ignore
+        self.df["bulan"] = self.df["tanggal_pesanan"].dt.month # type: ignore
+        self.df["bulan_nama"] = self.df["tanggal_pesanan"].dt.strftime("%B") # type: ignore
+        self.df_completed["tahun"] = self.df_completed["tanggal_pesanan"].dt.year # type: ignore
+        self.df_completed["bulan"] = self.df_completed["tanggal_pesanan"].dt.month # type: ignore
+        self.df_completed["bulan_nama"] = self.df_completed["tanggal_pesanan"].dt.strftime("%B") # type: ignore
 
     # ── REVENUE & SALES TREN ───────────────────────────────────────
 
@@ -77,6 +77,13 @@ class AnalyticsEngine:
         df_bulan_b = self.df_completed[
             (self.df_completed["bulan"] == bulan_b) & (self.df_completed["tahun"] == tahun)
         ]
+
+        if df_bulan_a.empty and df_bulan_b.empty:
+            raise ValueError(f"Data untuk bulan {bulan_a} dan {bulan_b} tidak tersedia di database.")
+        elif df_bulan_a.empty:
+            raise ValueError(f"Data untuk bulan {bulan_a} tidak tersedia di database.")
+        elif df_bulan_b.empty:
+            raise ValueError(f"Data untuk bulan {bulan_b} tidak tersedia di database.")
 
         rev_a = df_bulan_a["valid_item_revenue"].sum()
         rev_b = df_bulan_b["valid_item_revenue"].sum()

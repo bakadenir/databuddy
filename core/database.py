@@ -67,3 +67,66 @@ def test_supabase_connection() -> bool:
     except Exception as e:
         print(f"[DB] Supabase error: {e}")
         return False
+
+
+def reset_supabase_data() -> dict:
+    """
+    Hapus SEMUA data dari semua tabel Supabase via RPC Function.
+    Pastikan function reset_databuddy_tables() sudah dibuat di Supabase!
+
+    Returns:
+        dict with status and details
+    """
+    try:
+        client = get_supabase_client()
+
+        # Debug: cek koneksi
+        print("[DEBUG] Supabase client OK, memanggil RPC...")
+
+        # Panggil RPC function yang sudah dibuat di Supabase
+        response = client.rpc("reset_databuddy_tables").execute()
+
+        print("[DEBUG] RPC response:", response)
+
+        return {
+            "success": True,
+            "total_deleted": len(response.data) if response.data else 8, # type: ignore
+            "details": response.data if response.data else [],
+            "message": "Semua tabel berhasil di-reset!"
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        print("[ERROR] RPC Error:", error_msg)
+
+        # Cek apakah error karena function belum dibuat
+        if "function" in error_msg.lower() and ("not exist" in error_msg.lower() or "does not exist" in error_msg.lower()):
+            return {
+                "success": False,
+                "error": "RPC Function belum dibuat! Jalankan SQL di Supabase Dashboard → SQL Editor",
+                "setup_required": True
+            }
+
+        # Cek permission error
+        if "permission" in error_msg.lower() or "access" in error_msg.lower():
+            return {
+                "success": False,
+                "error": f"Permission denied: {error_msg}. Pastikan GRANT EXECUTE sudah dijalankan.",
+                "setup_required": True
+            }
+
+        return {
+            "success": False,
+            "error": error_msg,
+            "full_traceback": str(e.__traceback__) if hasattr(e, '__traceback__') else None
+        }
+
+
+def get_supabase_table_count(table_name: str) -> int:
+    """Hitung jumlah baris di tabel Supabase."""
+    try:
+        client = get_supabase_client()
+        response = client.table(table_name).select("*", count="exact").execute() # type: ignore
+        return response.count if hasattr(response, 'count') and response.count is not None else 0
+    except Exception:
+        return 0
