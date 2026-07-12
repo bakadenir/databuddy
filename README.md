@@ -1,79 +1,161 @@
-# DataBuddy — E-Commerce Analytics & Expert System 🛍️🤖
+# DataBuddy — E-Commerce Analytics Assistant 🛍️🤖
 
-> **Rule-Based + LLM Hybrid Assistant** untuk memproses data e-commerce, mengidentifikasi pelanggan VIP, meramal omzet, dan memberikan *insight* operasional melalui *Local AI*.
+> **Rule-Based + ML + LLM Hybrid Assistant** untuk analitik data Shopee: segmentasi pelanggan, forecasting omzet, rekomendasi bundling, dan chatbot AI analis dalam satu dashboard.
+
+**🌐 Live Demo:** [databuddy.my.id](https://databuddy.my.id) | **Model:** `qwen2.5:1.5b` (Ollama) | **Deploy:** Docker Compose + Caddy + VPS
 
 ---
 
 ## 🎯 Problem Statement
-- **Konteks:** Penjual online/e-commerce saat ini menghadapi potongan biaya admin platform (marketplace) yang semakin besar (hingga 10-12%).
-- **Masalah:** Penjual kesulitan mengidentifikasi pelanggan "Sultan" (B2B/Kafe/Pembeli Skala Besar) dari ratusan baris data transaksi harian, sehingga kehilangan kesempatan untuk menarik mereka ke jalur penjualan langsung (Direct Order via WhatsApp).
-- **Dampak:** Margin keuntungan toko tergerus habis oleh pajak marketplace, padahal omzet besar disumbang oleh segelintir pelanggan VIP.
-- **Solusi:** **DataBuddy**, sebuah aplikasi asisten cerdas yang memadukan **Rule-Based Expert System** (untuk deteksi VIP akurat) dan **Local LLM** (untuk menyusun pesan *copywriting* penawaran WhatsApp ke pelanggan secara personal).
 
-## 🧠 AI System Approach (Rule-Based + ML + LLM)
-Aplikasi ini tidak hanya menggunakan LLM buta, melainkan perpaduan hibrida:
-1. **Rule-Based AI (Clustering):** Digunakan untuk segmentasi *Super VIP*, *Loyal*, dan *Reguler*. Aturan pasti (seperti frekuensi order > 5x dan nominal > Rp 3 Juta) jauh lebih akurat menggunakan *Rule-Based* daripada menebak menggunakan LLM.
-2. **Traditional ML (Forecasting & Bundling):** Menggunakan **Apriori** (Market Basket Analysis) untuk rekomendasi paket barang dan **Holt-Winters ETS** untuk peramalan omzet bulan depan.
-3. **Local LLM (Chat Assistant):** Membaca hasil *Rule-Based* dan *ML* di atas untuk menghasilkan narasi manusiawi, rekomendasi operasional, dan merangkai draf pesan promosi WhatsApp. (Menggunakan *Ollama* secara lokal).
+- **Konteks:** Seller Shopee di Indonesia menghadapi potongan biaya marketplace (hingga 10-12%) dan kesulitan menganalisis ratusan transaksi harian secara manual.
+- **Masalah:** Penjual tidak tahu produk mana yang profit, pelanggan mana yang VIP, dan kapan waktu terbaik untuk promosi — semua data mentah di Excel tanpa insight.
+- **Dampak:** Margin tergerus, keputusan bisnis berdasarkan intuisi, pelanggan VIP tidak di-maintain dengan baik.
+- **Solusi:** **DataBuddy** — upload file Excel Shopee → ETL otomatis (8 tabel star schema) → Dashboard interaktif + Chatbot AI analis yang membaca data toko.
 
 ---
 
-## 💻 Instalasi & Menjalankan di Windows (Local PC)
+## 🧠 AI System Approach (Hybrid: Rule-Based + ML + LLM)
 
-Proyek ini dibangun menggunakan Python dan Streamlit. Berikut adalah cara menjalankannya di laptop Windows Anda.
+| Approach | Use Case | Implementasi |
+|----------|----------|:---:|
+| **Rule-Based AI** | Segmentasi pelanggan VIP/Loyal | Forward chaining rules (frekuensi ≥5x + revenue ≥Rp3M) |
+| **Traditional ML** | Bundling & Forecasting | Apriori (Market Basket) + Holt-Winters ETS |
+| **Local LLM** | Chat Assistant & Narasi | `qwen2.5:1.5b` via Ollama (CPU inference) |
+| **Cloud LLM** | Fallback cepat | GLM-4-Plus via ZhipuAI API |
 
-### 1. Prasyarat (Prerequisites)
-- **Python** (versi 3.10 atau 3.11 disarankan).
-- **Ollama** (Unduh dari [ollama.com](https://ollama.com/) dan install di Windows).
+### ⚡ Ollama vs GLM Performance (Real Measurement)
+| Metric | Ollama (qwen2.5:1.5b) | GLM-4-Plus (API) |
+|--------|:---:|:---:|
+| **Cold start** | 7-25 detik | <1 detik |
+| **Inference speed** | ~5 detik (CPU) | <1 detik (GPU cluster) |
+| **With keep_alive** | <1 detik | — |
+| **Privacy** | ✅ Data stays local | ⚠️ Data sent to cloud |
 
-### 2. Buka Terminal / Command Prompt
-Buka terminal (CMD atau PowerShell) dan masuk ke folder proyek ini.
+---
 
-### 3. Buat Virtual Environment (Wajib)
-Jalankan perintah berikut untuk mengisolasi instalasi library:
+## 🏗️ Architecture
+
+```
+User Browser → Caddy (HTTPS) → Streamlit (port 8501)
+                                    ├── Ollama (qwen2.5:1.5b, port 11434)
+                                    ├── Supabase (8 tables, star schema)
+                                    └── ETL Pipeline (Pandas)
+```
+
+Diagram arsitektur lengkap: [`architecture.html`](architecture.html)
+
+---
+
+## 🚀 Deployment (Docker Compose + VPS)
+
+### Prasyarat
+- Docker + Docker Compose
+- Domain dengan DNS pointing ke VPS (Caddy auto-HTTPS)
+
+### Quick Start
+```bash
+git clone https://github.com/bakadenir/databuddy.git
+cd databuddy
+cp .env.example .env  # edit SUPABASE_URL, SUPABASE_KEY, ZHIPUAI_API_KEY
+docker compose up -d
+```
+
+Aplikasi tersedia di `https://<domain-anda>`.
+
+### Container
+| Service | Deskripsi | Port |
+|---------|-----------|:---:|
+| `web` | Streamlit app | 8501 (internal) |
+| `ollama` | qwen2.5:1.5b local LLM | 11434 (internal) |
+| `caddy` | Auto-HTTPS reverse proxy | 80, 443 |
+
+### Environment Variables (`.env`)
+```bash
+SUPABASE_URL=https://xxx.supabase.co
+SUPABASE_KEY=eyJhbGci...
+ZHIPUAI_API_KEY=xxx  # opsional, untuk GLM fallback
+OLLAMA_KEEP_ALIVE=-1  # model stay di RAM, hilangkan cold start
+```
+
+---
+
+## ⚡ Optimizations
+
+1. **`OLLAMA_KEEP_ALIVE=-1`** — model `qwen2.5:1.5b` stay di RAM sepanjang container hidup, cold start dari 25s → <1s
+2. **`build_master()` caching** — join 8 tabel hanya sekali via `st.session_state`, ganti tab tanpa query ulang
+3. **2-step chat render** — pesan user langsung muncul di UI tanpa nunggu LLM selesai
+4. **Default to Ollama** — sidebar default ke LLM lokal, GLM sebagai fallback
+
+---
+
+## 💻 Local Development (Windows)
+
 ```cmd
+# 1. Virtual environment
 python -m venv .venv
-```
-Aktifkan *environment* tersebut:
-```cmd
 .venv\Scripts\activate
-```
-*(Ciri berhasil: Akan ada tulisan `(.venv)` di sebelah kiri terminal Anda).*
 
-### 4. Install Dependencies (Library)
-```cmd
+# 2. Install dependencies
 pip install -r requirements.txt
-```
 
-### 5. Setup LLM (Ollama)
-Pastikan Ollama sudah berjalan di latar belakang Windows Anda. Lalu unduh model AI lokal (Llama 3 atau Llama 3.2):
-```cmd
-ollama run llama3.2
-```
-*(Tunggu hingga proses download 100% selesai. Jika sudah bisa mengetik prompt di terminal, ketik `/bye` untuk keluar).*
+# 3. Jalankan Ollama & download model
+ollama run qwen2.5:1.5b
 
-### 6. Jalankan Aplikasi Streamlit
-Terakhir, jalankan aplikasi web dengan perintah:
-```cmd
+# 4. Run Streamlit
 streamlit run app.py
 ```
-Aplikasi akan otomatis terbuka di *browser* Anda pada alamat: `http://localhost:8501`.
-
----
-
-## 🏗️ Architecture Design
-1. **Input:** User mengunggah file `CSV`/`Excel` berisi data transaksi e-commerce.
-2. **Proses (Pandas & ML):** Data dibersihkan dan dimasukkan ke dalam algoritma *Apriori* (Bundling), *Holt-Winters* (Forecasting), dan *Forward Chaining Rules* (Segmentasi).
-3. **LLM Context Engine:** Hasil angka dan data dari langkah 2 diubah menjadi *Prompt* berstruktur (Konteks).
-4. **Local AI (Ollama):** Menerima *Prompt Context* beserta *Guardrail* ketat, lalu memproses instruksi user.
-5. **Output:** Tampilan *Dashboard* interaktif (Plotly) dan jendela *Chatbox* Asisten AI di Streamlit.
 
 ---
 
 ## 🛡️ Responsible AI & Guardrails
-Aplikasi ini dilengkapi **System Prompt Guardrail** yang ketat di `pages/3_Chatbox.py`:
-- **Anti-Hallucination:** AI dilarang keras memalsukan atau mengarang angka omzet. Jika data tidak ada di dalam konteks layar saat itu, AI dipaksa untuk menolak menjawab dengan sopan dan mengarahkan pengguna untuk menjalankan proses *Machine Learning* di halaman *Strategi* terlebih dahulu.
-- **Privacy:** Sistem hanya memproses data agregat statistik, tidak membaca detail nomor telepon pengguna untuk dikirimkan ke model secara mentah.
+
+Sistem prompt guardrail di `pages/3_Chatbox.py`:
+- **Anti-Hallucination:** AI dilarang mengarang angka. Jika data tidak di konteks, tolak dengan sopan.
+- **Privacy:** Data pelanggan diproses lokal via Ollama, tidak dikirim ke cloud.
+- **Academic Integrity:** AI mengenali prompt cheating dan menolak.
+- **Bahasa Indonesia:** Wajib menjawab dalam Bahasa Indonesia.
+- **Overreliance:** AI mengarahkan user ke halaman Strategi untuk analisis ML yang akurat.
 
 ---
-*Dibuat untuk keperluan Tugas Akhir / UAS AI - 2025* 🎓
+
+## 📊 Fitur
+
+| Halaman | Fitur |
+|---------|-------|
+| **🏠 Home** | Landing page, SEO metadata |
+| **📥 Upload & ETL** | Upload CSV/Excel Shopee → 8 tabel star schema |
+| **📊 Dashboard** | Revenue trend, top produk, heatmap, geo analysis, AOV |
+| **🎯 Strategi** | Bundling (Apriori), Clustering VIP, Forecasting (Holt-Winters) |
+| **💬 Chatbox** | AI Data Analyst — tanya apapun tentang performa toko |
+
+---
+
+## 📂 Project Structure
+
+```
+databuddy/
+├── app.py                 # Landing page
+├── pages/
+│   ├── 0_Home.py          # Upload & ETL
+│   ├── 1_Dashboard.py     # Dashboard analytics
+│   ├── 2_Strategi.py      # ML: Bundling, Clustering, Forecasting
+│   └── 3_Chatbox.py       # AI Chatbot (Ollama + GLM)
+├── core/
+│   ├── analytics_engine.py
+│   ├── data_manager.py    # build_master() + caching
+│   ├── database.py
+│   ├── ml_context.py
+│   ├── ml_engine.py
+│   └── models.py
+├── components/ui.py
+├── etl/                   # ETL pipeline
+├── docker-compose.yml
+├── Dockerfile
+├── Caddyfile
+└── requirements.txt
+```
+
+---
+
+*Dibuat untuk UAS AI04 — Artificial Intelligence, Universitas Cakrawala, 2025/2026 Genap* 🎓
