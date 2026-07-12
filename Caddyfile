@@ -1,5 +1,8 @@
-# Caddyfile — Development Mode
-# Untuk production, ganti :80 dengan domain asli kamu
-:80 {
+# Caddyfile — Production with HTTPS
+databuddy.my.id {
     reverse_proxy web:8501
+}
+
+ssh.databuddy.my.id {
+    reverse_proxy 172.18.0.1:7681
 }

@@ -9,3 +9,14 @@ data/processed/*
 data/local.db
 *.egg-info/
 .ipynb_checkpoints/
+.aider*
+
+# Temporary deliverables (di-generate nanti)
+Laporan_*.pdf
+naskah_presentasi.md
+presentation.pptx
+
+# Monitoring scripts
+databuddy-*.sh
+monitor.log
+get-docker.sh

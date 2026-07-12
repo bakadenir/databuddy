@@ -225,6 +225,7 @@ else:
                     tables = run_etl(df_raw, existing_products)
                     st.session_state["etl_tables"] = tables
                     st.session_state["etl_done"] = True
+                    st.session_state.pop("df_master", None)
                     st.cache_data.clear()
                     st.success("✅ ETL selesai! Data siap dianalisis.")
                     st.balloons()

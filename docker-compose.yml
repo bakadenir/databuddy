@@ -6,26 +6,47 @@ services:
     container_name: databuddy_web
     restart: always
     environment:
-      # Arahkan OLLAMA_URL ke internal container 'ollama' pada port 11434
       - OLLAMA_URL=http://ollama:11434/api/chat
     env_file:
       - .env
     volumes:
-      - ./.streamlit:/app/.streamlit
+      - .:/app
+      - app_data:/app/data
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
 
   ollama:
     image: ollama/ollama:latest
     container_name: databuddy_ollama
     restart: always
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1
     volumes:
-      # Simpan data model LLM di volume agar tidak hilang saat direstart
       - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
+        limits:
+          memory: 6G
         reservations:
-          # Alokasikan RAM yang cukup untuk qwen2.5:3b (min 4GB disarankan)
           memory: 4G
 
   caddy:
@@ -40,9 +61,17 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - web
+      web:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 128M
 
 volumes:
   ollama_data:
   caddy_data:
   caddy_config:
+  app_data:

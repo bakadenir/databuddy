@@ -122,6 +122,11 @@ def build_master(tables: dict) -> pd.DataFrame:
     Join semua tabel menjadi satu DataFrame master untuk analisis.
     Ini adalah 'denormalized view' dari star schema.
     """
+    # 🚀 CACHE: join hanya sekali, simpan di session_state
+    import streamlit as st
+    if "df_master" in st.session_state and st.session_state["df_master"] is not None:
+        return st.session_state["df_master"]
+
     fact = tables["fact_order_item"].copy()
     
     # Konversi tipe
@@ -155,6 +160,8 @@ def build_master(tables: dict) -> pd.DataFrame:
     df["tanggal_pesanan"] = pd.to_datetime(df["tanggal_pesanan"], errors="coerce")
     df["order_created_at"] = pd.to_datetime(df["order_created_at"], errors="coerce")
 
+    # Simpan di cache biar ganti tab ga join ulang
+    st.session_state["df_master"] = df
     return df
 
 

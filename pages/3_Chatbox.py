@@ -13,6 +13,7 @@ load_dotenv(override=True)
 import pandas as pd
 from components.ui import render_navbar, render_sidebar_footer, COLORS, SPACING
 from core.analytics_engine import AnalyticsEngine, get_bulan_name, format_rupiah
+from core.ml_context import get_full_ai_context
 
 st.set_page_config(page_title="AI Chatbox | DataBuddy", page_icon="💬", layout="wide")
 
@@ -30,7 +31,7 @@ st.markdown(f"""
         margin-bottom: 0.5rem;
         line-height: 1.2;
         letter-spacing: -0.02em;
-    ">💬 Konsultan Data Pribadi</h1>
+    ">💬 Data Buddy</h1>
     <p style="color: #64748b; margin-top: 0.5rem; font-size: 1.15rem; font-weight: 400; line-height: 1.6;">
         Ngobrol santai seputar performa toko Anda dengan Senior Data Analyst AI 👨‍💻📈
     </p>
@@ -91,7 +92,7 @@ div[data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarUser"]) [d
 # ═════════════════════════════════════════════════════════════════════
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
-OLLAMA_MODEL = "qwen2.5:3b"
+OLLAMA_MODEL = "qwen2.5:1.5b"
 
 # ZhipuAI / GLM
 ZHIPUAI_API_KEY = os.environ.get("ZHIPUAI_API_KEY", "")
@@ -105,10 +106,32 @@ MODEL = GLM_MODEL if USE_GLM else OLLAMA_MODEL
 SYSTEM_PROMPT = """Anda Senior Data Analyst di DataBuddy (platform analitik Shopee Indonesia).
 Anda adalah sosok analis yang pandai bercerita (storytelling) dan ramah. Berikan penjelasan yang komprehensif, menarik, dan tidak kaku (jangan cuma bullet points). Jelaskan "mengapa" di balik data, berikan konteks, dan sajikan insight layaknya menceritakan sebuah narasi bisnis yang seru kepada pemilik toko. Gunakan gaya bahasa yang kasual, suportif, antusias, namun tetap profesional.
 
+**INFORMASI PENCIPTA APLIKASI:**
+Aplikasi/DataBuddy ini dibuat oleh **Deni Romadhon**, mahasiswa Semester 4 Jurusan Ilmu Komputer di Universitas Cakrawala. Jika ada yang bertanya tentang siapa pembuat, pencetus, atau penemu aplikasi/projek ini, jawablah dengan informasi tersebut dengan bangga dan sesuaikan bahasanya secara natural.
+
+**BATASAN TOPIK (OUT OF SCOPE):**
+Anda HANYA berfokus pada analisis data penjualan Shopee, performa toko, produk, pelanggan, dan metrik e-commerce. Jika user bertanya hal-hal DI LUAR tema aplikasi seperti:
+- Prediksi saham, mata uang, kripto, atau investasi keuangan lainnya
+- Rumus-rumus akademik, matematika kompleks, atau hal teknis di luar e-commerce
+- Prediksi cuaca, togel, atau hal-hal gaib
+- Topik politik, berita terkini, atau hal umum yang tidak ada hubungannya dengan data toko
+
+Maka TOLAK dengan sopan dan arahkan user untuk bertanya seputar:
+- Data penjualan/omzet toko
+- Performa produk (terlaris/kurang laku)
+- Analisis pelanggan (VIP, loyalitas)
+- Performa wilayah/kota
+- Metode pembayaran
+- Jam/hari terbaik penjualan
+- Ringkasan performa bulanan
+
+Contoh penolakan: "Maaf, saya khusus didesain untuk analisis data penjualan Shopee dan performa toko saja. Untuk prediksi saham atau mata uang di luar topik saya. Yuk, kita fokus ke data penjualan toko Anda! Ada yang ingin saya analisis dari performa toko Anda?"
+
 **ATURAN KERAS (ANTI-HALUSINASI):**
 1. JANGAN PERNAH mengarang angka, memprediksi masa depan, atau memberikan data palsu.
 2. HANYA gunakan angka yang dikirimkan kepada Anda di dalam [Konteks Data].
 3. Jika Anda tidak melihat angka atau data spesifik yang ditanyakan di dalam [Konteks Data], TOLAK DENGAN SOPAN dan katakan bahwa Anda belum memiliki data tersebut. JANGAN membuat tebakan.
+4. **WAJIB menjawab dalam Bahasa Indonesia.** Jangan gunakan Bahasa Inggris kecuali user bertanya dalam Bahasa Inggris. Semua penjelasan, insight, dan rekomendasi HARUS dalam Bahasa Indonesia yang baik dan benar.
 
 **KONTOKS BISNIS & STRATEGI UTAMA:**
 Toko ini menjual **PRODUK KOPI**. Gunakan pengetahuan ini saat memberikan insight atau contoh (misal: tren penikmat kopi, perilaku pembelian produk kopi, "grind size", "brewing method") untuk membuat cerita Anda lebih relevan dan hidup.
@@ -415,27 +438,25 @@ with st.sidebar:
     with st.expander("⚙️ Settings", expanded=False):
         # Opsi Pilihan LLM Provider
         provider_options = ["🦙 Ollama (Lokal)", "🧠 GLM (Cloud)"]
-        default_idx = 1 if bool(ZHIPUAI_API_KEY) else 0
+        default_idx = 0  # Default ke Ollama lokal
         selected_provider = st.radio("Pilih Provider AI:", provider_options, index=default_idx)
 
         USE_GLM = selected_provider == "🧠 GLM (Cloud)"
-        MODEL = GLM_MODEL if USE_GLM else OLLAMA_MODEL
+
+        # Opsi model Ollama
+        OLLAMA_MODEL_ACTIVE = OLLAMA_MODEL
+
+        MODEL = GLM_MODEL if USE_GLM else OLLAMA_MODEL_ACTIVE
 
         st.markdown(f"**Model Aktif:** {MODEL}")
 
         # Data Status Indicator
         st.markdown(f"**Data:** {data_status}")
 
-        # Debug info (expandable)
-        if debug_info:
-            with st.expander("🔍 Debug Info", expanded=False):
-                for key, val in debug_info.items():
-                    st.text(f"{key}: {val}")
-
         ollama_context = 4096
         if not USE_GLM:
             ollama_context = st.slider("🧠 Context Window", min_value=1024, max_value=8192, value=4096, step=1024)
-        temperature = st.slider("🌡️ Temperature", min_value=0.0, max_value=1.0, value=0.7, step=0.1)
+        temperature = st.slider("🌡️ Temperature", min_value=0.0, max_value=1.0, value=0.5, step=0.1, help="0=presisi/faktual, 1=kreatif. Rekomendasi: 0.5 untuk analisis data")
 
         st.markdown("---")
 
@@ -461,26 +482,10 @@ for message in st.session_state.messages:
 ml_context = st.session_state.pop("ai_ml_context", None)
 user_input = st.chat_input("Tanya apa saja seputar data toko Anda...")
 
-# Build system info about available data
-data_overview = ""
-if df_master is not None and not df_master.empty:
-    min_date = df_master["tanggal_pesanan"].min()
-    max_date = df_master["tanggal_pesanan"].max()
-    total_orders = df_master["order_id"].nunique()
-    total_customers = df_master["customer_id"].nunique()
-    total_revenue = df_master[df_master["is_completed"] == 1]["valid_item_revenue"].sum()
+# Ambil KONTEKS LENGKAP (Dashboard + Hasil ML yang sudah di-run)
+full_ai_context = get_full_ai_context()
 
-    data_overview = f"""
-**DATA YANG TERSEDIA:**
-• Periode: {min_date.strftime('%d %B %Y')} s.d. {max_date.strftime('%d %B %Y')}
-• Total Orders: {total_orders:,}
-• Total Customers: {total_customers:,}
-• Total Revenue: Rp {total_revenue:,.0f}
-
-Data ini SUDAH LENGKAP dan SIAP Dianalisis. Anda tidak perlu minta data tambahan - cukup tanya spesifik metrik/bulan/produk yang ingin dilihat.
-"""
-
-# Prioritaskan ML context, lalu cek apakah user input pertanyaan analytics
+# Prioritaskan ML context dari tombol Strategi, lalu cek apakah user input pertanyaan analytics
 prompt = ml_context or user_input
 
 # Dapatkan context intent dari histori untuk menyambung pertanyaan seperti "kalau februarinya?"
@@ -498,22 +503,33 @@ if user_input and not ml_context:
     # Cek apakah analytics_result valid (bukan error message)
     is_valid_analytics = analytics_result and not analytics_result.startswith("Maaf") and not analytics_result.startswith("❌")
 
+    # Cek apakah ini greeting (analytics_result = None berarti greeting atau unknown)
+    is_greeting = (analytics_result is None)
+
     if is_valid_analytics:
-        # Jika berhasil query analytics, gunakan hasilnya saja (tanpa data overview total)
-        prompt = f"[JAWABAN ANALITIS SPESIFIK]\n{analytics_result}\n\n[PERTANYAAN USER]\n{user_input}\n\nBerdasarkan data di atas, jelaskan dengan bahasa mudah dipahami. JANGAN halu atau tambah data di luar yang tersedia!"
-    elif data_overview:
-        # Jika bukan pertanyaan analytics atau query gagal, inject data overview
-        prompt = f"{data_overview}\n\n[PERTANYAAN USER]\n{user_input}\n\nJika pertanyaan berupa sapaan atau percakapan ringan, balaslah dengan ramah. Jika berupa pertanyaan data, jawab HANYA berdasarkan data di atas (katakan 'Data tidak tersedia' jika kurang)."
+        # Jika berhasil query analytics, gunakan hasilnya + full context
+        prompt = f"{full_ai_context}\n\n[JAWABAN ANALITIS SPESIFIK]\n{analytics_result}\n\n[PERTANYAAN USER]\n{user_input}\n\nBerdasarkan semua data di atas, jelaskan dengan bahasa mudah dipahami. JANGAN halu atau tambah data di luar yang tersedia!"
+    elif is_greeting:
+        # Untuk sapaan, tetap inject full context tapi response tetap ringkas
+        prompt = f"{full_ai_context}\n\n{user_input}\n\n[SYSTEM NOTE: Ini adalah sapaan/percakapan ringan. Balas dengan ramah, singkat, dan natural. Perkenalkan diri sebagai DataBuddy Assistant dan tawarkan bantuan analisis data toko.]"
+    elif full_ai_context:
+        # Jika bukan pertanyaan analytics atau query gagal, inject full context
+        prompt = f"{full_ai_context}\n\n[PERTANYAAN USER]\n{user_input}\n\nJika pertanyaan berupa sapaan, balaslah dengan ramah. Jika berupa pertanyaan data, jawab HANYA berdasarkan data di atas (katakan 'Data tidak tersedia' jika kurang)."
     else:
         # Tidak ada data sama sekali
         prompt = f"{user_input}\n\n[SYSTEM NOTE: TIDAK ADA DATA YANG TERSEDIA. Jawab bahwa data belum tersedia dan minta user upload data ke Supabase atau hubungikan database.]"
 
-if prompt:
-    # Simpan hanya input bersih ke histori chat agar UI rapi dan token lebih hemat
-    clean_user_input = user_input if user_input else "📊 Data Analytics Context"
-    st.session_state.messages.append({"role": "user", "content": clean_user_input})
-    with st.chat_message("user"):
-        st.markdown(clean_user_input)
+if prompt or st.session_state.get("_processing_prompt"):
+    # ── Phase 1: Simpan input + trigger render ──
+    if not st.session_state.get("_processing_prompt"):
+        clean_user_input = user_input if user_input else "📊 Data Analytics Context"
+        st.session_state.messages.append({"role": "user", "content": clean_user_input})
+        st.session_state["_processing_prompt"] = prompt
+        st.rerun()
+
+    # ── Phase 2: Ambil dari session, proses LLM ──
+    prompt = st.session_state.pop("_processing_prompt")
+    clean_user_input = st.session_state.pop("_processing_clean", "")
 
     # Siapkan pesan untuk API: Ambil semua histori (bersih), lalu inject prompt sistem ke pesan TERAKHIR saja
     api_messages = [{"role": "system", "content": SYSTEM_PROMPT}] + st.session_state.messages[:-1]
@@ -550,7 +566,7 @@ if prompt:
                     response = requests.post(
                         OLLAMA_URL,
                         json={
-                            "model": OLLAMA_MODEL,
+                            "model": OLLAMA_MODEL_ACTIVE,
                             "messages": api_messages,
                             "stream": False,
                             "options": {
@@ -583,11 +599,5 @@ if prompt:
 # ═════════════════════════════════════════════════════════════════════
 # BACKGROUND PRELOAD — Auto-load Supabase di background (deferred)
 # ═════════════════════════════════════════════════════════════════════
-
-try:
-    from core.data_manager import prefetch_supabase
-    prefetch_supabase()
-except Exception:
-    pass
 
 render_sidebar_footer()

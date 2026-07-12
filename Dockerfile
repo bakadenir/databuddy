@@ -8,9 +8,12 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies
+# Install python dependencies (tanpa supabase dulu)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install supabase terpisah (workaround konflik zhipuai vs supabase-auth soal pyjwt)
+RUN pip install --no-cache-dir supabase>=2.31.0
 
 # Copy application code
 COPY . .
