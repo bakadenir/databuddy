@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<title>DataBuddy Architecture Diagram</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#0d1117; color:#c9d1d9; font-family:system-ui,sans-serif; display:flex; justify-content:center; align-items:center; min-height:100vh; padding:2rem; }
+  .diagram { max-width:1100px; width:100%; }
+  h1 { text-align:center; margin-bottom:2rem; color:#58a6ff; font-size:1.8rem; }
+  h2 { color:#8b949e; font-size:1rem; font-weight:400; text-align:center; margin-bottom:2rem; }
+  
+  .arch-grid { display:grid; gap:1.5rem; }
+  
+  /* LAYERS */
+  .layer { border:2px solid #30363d; border-radius:12px; padding:1.5rem; }
+  .layer-title { font-size:0.75rem; text-transform:uppercase; letter-spacing:0.1em; color:#8b949e; margin-bottom:1rem; }
+  
+  .boxes { display:flex; gap:1rem; flex-wrap:wrap; justify-content:center; }
+  .box { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:1rem 1.5rem; text-align:center; min-width:140px; }
+  .box-icon { font-size:1.8rem; margin-bottom:0.5rem; }
+  .box-name { font-weight:700; font-size:0.9rem; color:#e6edf3; }
+  .box-detail { font-size:0.7rem; color:#8b949e; margin-top:0.25rem; }
+  
+  .arrows { display:flex; justify-content:center; gap:2rem; margin:0.5rem 0; color:#58a6ff; font-size:1.2rem; font-weight:700; }
+  .arrow-down { text-align:center; color:#58a6ff; font-size:1.5rem; margin:0.25rem 0; }
+  
+  /* LAYER COLORS */
+  .layer-user { border-color:#1f6feb; }
+  .layer-gateway { border-color:#f0883e; }
+  .layer-app { border-color:#3fb950; }
+  .layer-data { border-color:#a371f7; }
+  
+  .spec-table { width:100%; border-collapse:collapse; margin-top:1rem; font-size:0.85rem; }
+  .spec-table th { text-align:left; color:#8b949e; padding:0.5rem 0; border-bottom:1px solid #21262d; width:30%; }
+  .spec-table td { padding:0.5rem 0; border-bottom:1px solid #21262d; }
+  .spec-table tr:last-child th, .spec-table tr:last-child td { border-bottom:none; }
+  
+  .infra-box { background:#161b22; border:1px solid #30363d; border-radius:8px; padding:1rem; margin-top:0.5rem; }
+  .infra-box h4 { color:#e6edf3; margin-bottom:0.5rem; }
+  .infra-box pre { color:#7ee787; font-size:0.8rem; overflow-x:auto; }
+</style>
+</head>
+<body>
+
+<div class="diagram">
+  <h1>🏗️ DataBuddy — Architecture & Deployment</h1>
+  <h2>E-Commerce Analytics Assistant | UAS AI04 — Universitas Cakrawala</h2>
+
+  <div class="arch-grid">
+
+    <!-- LAYER 1: USER -->
+    <div class="layer layer-user">
+      <div class="layer-title">🔵 Layer 1 — User Access</div>
+      <div class="boxes">
+        <div class="box">
+          <div class="box-icon">🌐</div>
+          <div class="box-name">Browser</div>
+          <div class="box-detail">HTTPS via domain</div>
+        </div>
+        <div class="box">
+          <div class="box-icon">📱</div>
+          <div class="box-name">Mobile</div>
+          <div class="box-detail">Responsive UI</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">⬇ HTTPS (databuddy.my.id) ⬇</div>
+
+    <!-- LAYER 2: GATEWAY -->
+    <div class="layer layer-gateway">
+      <div class="layer-title">🟠 Layer 2 — Gateway & SSL</div>
+      <div class="boxes">
+        <div class="box">
+          <div class="box-icon">🔒</div>
+          <div class="box-name">Caddy</div>
+          <div class="box-detail">Port 80 → 443<br>Let's Encrypt SSL<br>Reverse Proxy</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">⬇ proxy_pass web:8501 ⬇</div>
+
+    <!-- LAYER 3: APP -->
+    <div class="layer layer-app">
+      <div class="layer-title">🟢 Layer 3 — Application (Docker)</div>
+      <div class="boxes">
+        <div class="box">
+          <div class="box-icon">🐍</div>
+          <div class="box-name">Streamlit</div>
+          <div class="box-detail">Port 8501<br>ETL + Dashboard<br>Chatbot UI<br>ML Engine</div>
+        </div>
+        <div class="box">
+          <div class="box-icon">🦙</div>
+          <div class="box-name">Ollama</div>
+          <div class="box-detail">Port 11434<br>qwen2.5:1.5b<br>CPU Inference<br>KEEP_ALIVE=-1</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="arrow-down">⬇ ⬇</div>
+
+    <!-- LAYER 4: DATA -->
+    <div class="layer layer-data">
+      <div class="layer-title">🟣 Layer 4 — Data & AI</div>
+      <div class="boxes">
+        <div class="box">
+          <div class="box-icon">🗄️</div>
+          <div class="box-name">Supabase</div>
+          <div class="box-detail">8 Tables<br>Star Schema<br>8.000+ Rows</div>
+        </div>
+        <div class="box">
+          <div class="box-icon">🧠</div>
+          <div class="box-name">LLM Context</div>
+          <div class="box-detail">Rule-Based + ML<br>+ LLM Hybrid<br>Prompt Guardrails</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEPLOYMENT SPECS -->
+    <div class="layer" style="border-color:#f0883e;">
+      <div class="layer-title">🖥️ Deployment Architecture</div>
+      
+      <table class="spec-table">
+        <tr><th>Provider</th><td>Tencent Cloud VPS</td></tr>
+        <tr><th>Specs</th><td>2 vCPU / 7.4 GB RAM / 79 GB SSD</td></tr>
+        <tr><th>OS</th><td>Ubuntu 24.04 LTS</td></tr>
+        <tr><th>Domain</th><td>databuddy.my.id (Hostinger)</td></tr>
+        <tr><th>SSL</th><td>Caddy — Let's Encrypt auto-provision</td></tr>
+        <tr><th>Orchestration</th><td>Docker Compose v3</td></tr>
+      </table>
+
+      <div class="infra-box" style="margin-top:1rem;">
+        <h4>🐳 Container Stack (docker-compose.yml)</h4>
+        <pre>┌─────────────────────────────────────────┐
+│  caddy          │ port 80, 443          │
+│  (Caddy 2)      │ auto HTTPS            │
+│  RAM: 256MB     │ reverse_proxy → web   │
+├─────────────────────────────────────────┤
+│  web            │ port 8501 (internal)  │
+│  (Streamlit)    │ ETL + Dashboard + AI  │
+│  RAM: 2GB       │ OLLAMA_URL → ollama   │
+├─────────────────────────────────────────┤
+│  ollama         │ port 11434 (internal) │
+│  (Ollama)       │ qwen2.5:1.5b (986MB)  │
+│  RAM: 6GB       │ KEEP_ALIVE=-1         │
+└─────────────────────────────────────────┘
+  Network: databuddy_default (bridge)
+  Volumes: ollama_data, caddy_data, app_data</pre>
+      </div>
+    </div>
+
+    <!-- DATA FLOW -->
+    <div class="layer" style="border-color:#58a6ff;">
+      <div class="layer-title">📊 Data Flow: ETL Pipeline</div>
+      <div class="boxes">
+        <div class="box">
+          <div class="box-icon">📥</div>
+          <div class="box-name">1. Upload</div>
+          <div class="box-detail">CSV/Excel Shopee<br>Seller Center</div>
+        </div>
+        <div class="box">
+          <div class="box-icon">⚙️</div>
+          <div class="box-name">2. ETL</div>
+          <div class="box-detail">Validate → Clean<br>Transform → 8 Tables</div>
+        </div>
+        <div class="box">
+          <div class="box-icon">📊</div>
+          <div class="box-name">3. Dashboard</div>
+          <div class="box-detail">KPI, Trends<br>Maps, Products</div>
+        </div>
+        <div class="box">
+          <div class="box-icon">🤖</div>
+          <div class="box-name">4. AI Chat</div>
+          <div class="box-detail">LLM + Context<br>→ Response</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
